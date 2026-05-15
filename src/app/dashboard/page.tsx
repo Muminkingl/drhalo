@@ -2,10 +2,12 @@
 
 import { usePatients } from '../context/PatientContext';
 import Link from 'next/link';
+import { useAuth } from '../context/AuthContext';
 import SupabaseSetupGuide from '../components/SupabaseSetupGuide';
 
 export default function Dashboard() {
   const { patients } = usePatients();
+  const { isReceptionAuth } = useAuth();
 
   // Calculate age from DOB
   const calculateAge = (dob: string): number => {
@@ -96,9 +98,11 @@ export default function Dashboard() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-white">Dashboard Overview</h1>
         <p className="text-gray-600 dark:text-gray-300 mt-2">
-          {patients.length === 0
-            ? "Welcome! Start by adding your first patient."
-            : `Managing ${totalPatients} patient${totalPatients !== 1 ? 's' : ''}`
+          {isReceptionAuth 
+            ? "Welcome! Use the button below to register a new patient."
+            : patients.length === 0
+              ? "Welcome! Start by adding your first patient."
+              : `Managing ${totalPatients} patient${totalPatients !== 1 ? 's' : ''}`
           }
         </p>
       </div>
@@ -141,20 +145,23 @@ export default function Dashboard() {
               </svg>
               Add New Patient
             </Link>
-            <Link
-              href="/dashboard/patients"
-              className="flex items-center p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition duration-150"
-            >
-              <svg className="h-5 w-5 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-              </svg>
-              View All Patients
-            </Link>
+            {!isReceptionAuth && (
+              <Link
+                href="/dashboard/patients"
+                className="flex items-center p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition duration-150"
+              >
+                <svg className="h-5 w-5 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                </svg>
+                View All Patients
+              </Link>
+            )}
           </div>
         </div>
 
         {/* Recent Patients */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 lg:col-span-2">
+        {!isReceptionAuth && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 lg:col-span-2">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Recent Patients</h3>
             <Link href="/dashboard/patients" className="text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
@@ -224,6 +231,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
       </div>
     </main>
   );
