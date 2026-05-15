@@ -55,7 +55,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { logout, isAuthenticated, isStaffAuth, isAdminAuth } = useAuth();
+  const { logout, isAuthenticated, isStaffAuth, isAdminAuth, isReceptionAuth } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [greeting, setGreeting] = useState('');
@@ -174,7 +174,7 @@ export default function DashboardLayout({
               </div>
               {(sidebarOpen || isMobile) && (
                 <div>
-                  <h1 className="font-bold text-xl text-gray-900 dark:text-white">Dr. Hawar</h1>
+                  <h1 className="font-bold text-xl text-gray-900 dark:text-white">Dr. Halo</h1>
                   <p className="text-xs text-gray-500 dark:text-gray-400">Patient Management</p>
                 </div>
               )}
@@ -223,7 +223,12 @@ export default function DashboardLayout({
         <div className="flex flex-col h-full">
           <nav className="flex-1 px-4 py-6 overflow-y-auto overflow-x-hidden scrollbar-hide">
             <ul className="space-y-2">
-              {navigationItems.map((item) => (
+              {navigationItems.filter(item => {
+                if (isReceptionAuth) {
+                  return item.name === 'Dashboard' || item.name === 'Patient Registration';
+                }
+                return true;
+              }).map((item) => (
                 <li key={item.name}>
                   <Link
                     href={item.href}
@@ -275,11 +280,11 @@ export default function DashboardLayout({
               <div className="space-y-3">
                 <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                   <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-sm">
-                    <span className="text-white font-semibold text-sm">{isStaffAuth ? 'ST' : 'AD'}</span>
+                    <span className="text-white font-semibold text-sm">{isStaffAuth ? 'ST' : isReceptionAuth ? 'RC' : 'AD'}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{isStaffAuth ? 'Staff' : 'Administrator'}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{isStaffAuth ? 'Clinic Staff' : 'System Admin'}</p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{isStaffAuth ? 'Staff' : isReceptionAuth ? 'Reception' : 'Administrator'}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{isStaffAuth ? 'Clinic Staff' : isReceptionAuth ? 'Front Desk' : 'System Admin'}</p>
                   </div>
                 </div>
                 <button 
@@ -295,7 +300,7 @@ export default function DashboardLayout({
             ) : (
               <div className="space-y-2">
                 <div className="w-10 h-10 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-sm">
-                  <span className="text-white font-semibold text-sm">{isStaffAuth ? 'ST' : 'AD'}</span>
+                  <span className="text-white font-semibold text-sm">{isStaffAuth ? 'ST' : isReceptionAuth ? 'RC' : 'AD'}</span>
                 </div>
                 <button 
                   onClick={logout}

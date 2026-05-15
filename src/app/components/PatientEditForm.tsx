@@ -25,6 +25,7 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
     pastMedicalHistory: patient.pastMedicalHistory || '',
     drugHistory: patient.drugHistory || '',
     pastSurgicalHistory: patient.pastSurgicalHistory || '',
+    examination: patient.examination || '',
     note: patient.note || '',
     tableData: patient.tableData || '',
     followUpDate: patient.followUpDate || '',
@@ -110,6 +111,7 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
       pastMedicalHistory: patient.pastMedicalHistory || '',
       drugHistory: patient.drugHistory || '',
       pastSurgicalHistory: patient.pastSurgicalHistory || '',
+      examination: patient.examination || '',
       note: patient.note || '',
       tableData: patient.tableData || '',
       followUpDate: patient.followUpDate || '',
@@ -700,6 +702,22 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
             value={formData.pastSurgicalHistory}
             onChange={handleChange}
             rows={3}
+            disabled={isLoading}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed"
+          />
+        </div>
+
+        {/* Examination */}
+        <div>
+          <label htmlFor="examination" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Examination
+          </label>
+          <textarea
+            id="examination"
+            name="examination"
+            value={formData.examination}
+            onChange={handleChange}
+            rows={4}
             disabled={isLoading}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed"
           />

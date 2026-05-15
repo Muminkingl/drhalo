@@ -23,9 +23,32 @@ export interface Patient {
   pastMedicalHistory?: string;
   drugHistory?: string;
   pastSurgicalHistory?: string;
+  examination?: string;
   followUpDate?: string;
+  prescription?: string;
   createdAt: string;
   userId?: string;
+}
+
+// Define the Visit interface
+export interface Visit {
+  id: string;
+  patient_id: string;
+  diagnosis: string;
+  treatment: string;
+  current_treatment: string;
+  history: string;
+  past_medical_history: string;
+  drug_history: string;
+  past_surgical_history: string;
+  examination: string;
+  follow_up_date: string;
+  note: string;
+  table_data: string;
+  prescription?: string;
+  visited_at: string;
+  user_id: string;
+  investigations?: Array<{ id: string; imageUrl: string; fileName: string; uploadedAt: string }>;
 }
 
 // Define the database record shape
@@ -47,6 +70,7 @@ interface PatientRecord {
   past_medical_history?: string;
   drug_history?: string;
   past_surgical_history?: string;
+  examination?: string;
   follow_up_date?: string;
   created_at: string;
   user_id: string;
@@ -61,6 +85,9 @@ interface PatientContextType {
   getPatient: (id: string) => Patient | undefined;
   deletePatient: (id: string) => Promise<void>;
   refreshPatients: () => Promise<void>;
+  addVisit: (patientId: string, visitData: Partial<Patient>) => Promise<void>;
+  editVisit: (visitId: string, visitData: Partial<Visit>) => Promise<void>;
+  getPatientVisits: (patientId: string) => Promise<Visit[]>;
 }
 
 const PatientContext = createContext<PatientContextType | undefined>(undefined);
@@ -142,6 +169,7 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
           pastMedicalHistory: p.past_medical_history || '',
           drugHistory: p.drug_history || '',
           pastSurgicalHistory: p.past_surgical_history || '',
+          examination: p.examination || '',
           followUpDate: p.follow_up_date || '',
           createdAt: p.created_at,
           userId: p.user_id
@@ -188,6 +216,7 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
         pastMedicalHistory: '',
         drugHistory: '',
         pastSurgicalHistory: '',
+        examination: '',
         followUpDate: '',
       } : patientData;
 
@@ -242,6 +271,7 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
           past_medical_history: sanitizedData.pastMedicalHistory || '',
           drug_history: sanitizedData.drugHistory || '',
           past_surgical_history: sanitizedData.pastSurgicalHistory || '',
+          examination: sanitizedData.examination || '',
           follow_up_date: sanitizedData.followUpDate || '',
           user_id: userId
         })
@@ -253,28 +283,31 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data && data[0]) {
+        const newPatientData = data[0];
+        
         // Add the new patient to the state
         const newPatient: Patient = {
-          id: data[0].id,
-          name: data[0].name,
-          dob: data[0].dob || '',
-          hospitalFileNumber: data[0].hospital_file_number,
-          mobileNumber: data[0].mobile_number,
-          sex: data[0].sex,
-          ageOfDiagnosis: data[0].age_of_diagnosis,
-          diagnosis: data[0].diagnosis,
-          treatment: data[0].treatment,
-          currentTreatment: data[0].current_treatment || '',
-          clinicId: data[0].clinic_id || '',
-          note: data[0].note,
-          tableData: data[0].table_data || '',
-          history: data[0].history || '',
-          pastMedicalHistory: data[0].past_medical_history || '',
-          drugHistory: data[0].drug_history || '',
-          pastSurgicalHistory: data[0].past_surgical_history || '',
-          followUpDate: data[0].follow_up_date || '',
-          createdAt: data[0].created_at,
-          userId: data[0].user_id
+          id: newPatientData.id,
+          name: newPatientData.name,
+          dob: newPatientData.dob || '',
+          hospitalFileNumber: newPatientData.hospital_file_number,
+          mobileNumber: newPatientData.mobile_number,
+          sex: newPatientData.sex,
+          ageOfDiagnosis: newPatientData.age_of_diagnosis,
+          diagnosis: newPatientData.diagnosis,
+          treatment: newPatientData.treatment,
+          currentTreatment: newPatientData.current_treatment || '',
+          clinicId: newPatientData.clinic_id || '',
+          note: newPatientData.note,
+          tableData: newPatientData.table_data || '',
+          history: newPatientData.history || '',
+          pastMedicalHistory: newPatientData.past_medical_history || '',
+          drugHistory: newPatientData.drug_history || '',
+          pastSurgicalHistory: newPatientData.past_surgical_history || '',
+          examination: newPatientData.examination || '',
+          followUpDate: newPatientData.follow_up_date || '',
+          createdAt: newPatientData.created_at,
+          userId: newPatientData.user_id
         };
 
         setPatients(prevPatients => [newPatient, ...prevPatients]);
@@ -285,7 +318,22 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
           const visitsTableExists = await ensureVisitsTableExists();
 
           if (visitsTableExists) {
-            const { error: visitError } = await supabase.from('visits').insert({ patient_id: data[0].id });
+            const visitData = {
+              patient_id: data[0].id,
+              diagnosis: sanitizedData.diagnosis || '',
+              treatment: sanitizedData.treatment || '',
+              current_treatment: sanitizedData.currentTreatment || '',
+              history: sanitizedData.history || '',
+              past_medical_history: sanitizedData.pastMedicalHistory || '',
+              drug_history: sanitizedData.drugHistory || '',
+              past_surgical_history: sanitizedData.pastSurgicalHistory || '',
+              examination: sanitizedData.examination || '',
+              follow_up_date: sanitizedData.followUpDate || '',
+              note: sanitizedData.note || '',
+              table_data: sanitizedData.tableData || '',
+              user_id: userId
+            };
+            const { error: visitError } = await supabase.from('visits').insert(visitData);
             if (visitError) {
               console.error('Error logging initial visit for new patient:', visitError);
             } else {
@@ -344,6 +392,7 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
       if (patientData.pastMedicalHistory !== undefined) dbData.past_medical_history = patientData.pastMedicalHistory;
       if (patientData.drugHistory !== undefined) dbData.drug_history = patientData.drugHistory;
       if (patientData.pastSurgicalHistory !== undefined) dbData.past_surgical_history = patientData.pastSurgicalHistory;
+      if (patientData.examination !== undefined) dbData.examination = patientData.examination;
       if (patientData.followUpDate !== undefined) dbData.follow_up_date = patientData.followUpDate;
 
       // Always use Supabase for data storage
@@ -414,6 +463,134 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
     await fetchPatients();
   };
 
+  // Add a new visit for an existing patient
+  const addVisit = async (patientId: string, visitData: Partial<Patient>) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (!isAuthenticated || !userId) {
+        throw new Error('Not authenticated');
+      }
+
+      // First check if visits table exists
+      const visitsTableExists = await ensureVisitsTableExists();
+      if (!visitsTableExists) {
+        throw new Error('Visits table does not exist. Please contact administrator.');
+      }
+
+      const dbVisitData = {
+        patient_id: patientId,
+        diagnosis: visitData.diagnosis || '',
+        treatment: visitData.treatment || '',
+        current_treatment: visitData.currentTreatment || '',
+        history: visitData.history || '',
+        past_medical_history: visitData.pastMedicalHistory || '',
+        drug_history: visitData.drugHistory || '',
+        past_surgical_history: visitData.pastSurgicalHistory || '',
+        examination: visitData.examination || '',
+        follow_up_date: visitData.followUpDate || '',
+        note: visitData.note || '',
+        table_data: visitData.tableData || '',
+        user_id: userId
+      };
+
+      const { error: visitError } = await supabase.from('visits').insert(dbVisitData);
+      if (visitError) {
+        console.error('Error logging new visit:', visitError);
+        throw new Error(`Failed to add visit: ${visitError.message}`);
+      }
+
+      // Optional: Update the patient's record with the latest visit info so it reflects in the main table
+      const { error: updateError } = await supabase
+        .from('patients')
+        .update({
+          diagnosis: dbVisitData.diagnosis,
+          treatment: dbVisitData.treatment,
+          current_treatment: dbVisitData.current_treatment,
+          history: dbVisitData.history,
+          past_medical_history: dbVisitData.past_medical_history,
+          drug_history: dbVisitData.drug_history,
+          past_surgical_history: dbVisitData.past_surgical_history,
+          examination: dbVisitData.examination,
+          follow_up_date: dbVisitData.follow_up_date,
+          note: dbVisitData.note,
+          table_data: dbVisitData.table_data
+        })
+        .eq('id', patientId);
+
+      if (updateError) {
+        console.error('Error updating patient with latest visit info:', updateError);
+        // Don't throw here, the visit was successfully created
+      } else {
+        // Update local state if successful
+        setPatients((prevPatients) => prevPatients.map(p => 
+          p.id === patientId ? { ...p, ...visitData } : p
+        ));
+      }
+
+    } catch (err) {
+      console.error('Error adding visit:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add visit');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get visits for a specific patient
+  const getPatientVisits = async (patientId: string): Promise<Visit[]> => {
+    try {
+      const { data, error: visitError } = await supabase
+        .from('visits')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('visited_at', { ascending: false });
+
+      if (visitError) {
+        console.error('Error fetching patient visits:', visitError);
+        return [];
+      }
+
+      return data || [];
+    } catch (err) {
+      console.error('Exception in getPatientVisits:', err);
+      return [];
+    }
+  };
+
+  // Edit a specific visit record (does NOT touch other visits)
+  const editVisit = async (visitId: string, visitData: Partial<Visit>) => {
+    try {
+      const dbData: Record<string, string> = {};
+      if (visitData.diagnosis !== undefined) dbData.diagnosis = visitData.diagnosis;
+      if (visitData.treatment !== undefined) dbData.treatment = visitData.treatment;
+      if (visitData.current_treatment !== undefined) dbData.current_treatment = visitData.current_treatment;
+      if (visitData.history !== undefined) dbData.history = visitData.history;
+      if (visitData.past_medical_history !== undefined) dbData.past_medical_history = visitData.past_medical_history;
+      if (visitData.drug_history !== undefined) dbData.drug_history = visitData.drug_history;
+      if (visitData.past_surgical_history !== undefined) dbData.past_surgical_history = visitData.past_surgical_history;
+      if (visitData.examination !== undefined) dbData.examination = visitData.examination;
+      if (visitData.follow_up_date !== undefined) dbData.follow_up_date = visitData.follow_up_date;
+      if (visitData.note !== undefined) dbData.note = visitData.note;
+      if (visitData.prescription !== undefined) dbData.prescription = visitData.prescription;
+      if (visitData.table_data !== undefined) dbData.table_data = visitData.table_data;
+
+      const { error } = await supabase
+        .from('visits')
+        .update(dbData)
+        .eq('id', visitId);
+
+      if (error) {
+        console.error('Error editing visit:', error);
+        throw new Error(`Failed to edit visit: ${error.message}`);
+      }
+    } catch (err) {
+      console.error('Exception in editVisit:', err);
+      throw err;
+    }
+  };
+
   return (
     <PatientContext.Provider value={{
       patients,
@@ -423,7 +600,10 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
       editPatient,
       getPatient,
       deletePatient,
-      refreshPatients
+      refreshPatients,
+      addVisit,
+      editVisit,
+      getPatientVisits
     }}>
       {children}
     </PatientContext.Provider>

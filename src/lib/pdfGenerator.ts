@@ -57,42 +57,12 @@ export const generatePatientPDF = async (patient: Patient) => {
     return false;
   };
 
-  // Function to estimate text height
-  const estimateTextHeight = (text: string, fontSize: number) => {
-    const lines = doc.splitTextToSize(text, CONTENT_WIDTH);
-    return (lines.length * fontSize * 0.5) + 10; // 0.5 is a multiplier for line spacing
-  };
-
   // Helper function to add a section title
   const addSectionTitle = (title: string) => {
     doc.setFontSize(16);
     doc.setTextColor(0, 0, 0);
     doc.text(title, PAGE_MARGIN, currentY);
     currentY += 10;
-  };
-
-  // Helper function to add a text section
-  const addTextSection = (title: string, content: string, checkNewPage = true) => {
-    // Skip if content is empty
-    if (!content || !content.trim()) {
-      return;
-    }
-
-    const textLines = doc.splitTextToSize(content, CONTENT_WIDTH);
-    const estimatedHeight = 20 + (textLines.length * 6); // title + content
-
-    // Check if we need a page break
-    if (checkNewPage && checkPageBreak(estimatedHeight)) {
-      // We're on a new page already, don't check again
-      addSectionTitle(title);
-    } else {
-      addSectionTitle(title);
-    }
-
-    doc.setFontSize(12);
-    doc.setTextColor(60, 60, 60);
-    doc.text(textLines, PAGE_MARGIN, currentY);
-    currentY += textLines.length * 6 + 15; // Add some extra space after the text
   };
 
   // Add title
@@ -156,11 +126,14 @@ export const generatePatientPDF = async (patient: Patient) => {
       ['Diagnosis', patient.diagnosis || 'N/A'],
       ['Age of Diagnosis', patient.ageOfDiagnosis || 'N/A'],
       ['Treatment', patient.treatment || 'N/A'],
+      ['Examination', patient.examination || 'N/A'],
       ['History', patient.history || 'N/A'],
       ['Past Medical History', patient.pastMedicalHistory || 'N/A'],
       ['Drug History', patient.drugHistory || 'N/A'],
       ['Past Surgical History', patient.pastSurgicalHistory || 'N/A'],
-      ['Follow Up Date', patient.followUpDate || 'N/A']
+      ['Follow Up Date', patient.followUpDate || 'N/A'],
+      ['Current Treatment', patient.currentTreatment || 'N/A'],
+      ['Internal Note', patient.note || 'N/A']
     ],
     theme: 'striped',
     headStyles: {
@@ -169,66 +142,14 @@ export const generatePatientPDF = async (patient: Patient) => {
       fontStyle: 'bold'
     },
     columnStyles: {
-      0: { cellWidth: 60, fontStyle: 'bold' }
+      0: { cellWidth: 60, fontStyle: 'bold' },
+      1: { cellWidth: 'auto' }
     },
     styles: { overflow: 'linebreak', cellPadding: 5 }
   });
 
   // Update Y position
   currentY = (doc as any).lastAutoTable.finalY + 15;
-
-  // Check current treatment length
-  const currentTreatmentText = patient.currentTreatment?.trim() || '';
-  const currentTreatmentHeight = currentTreatmentText ? estimateTextHeight(currentTreatmentText, 12) : 0;
-
-  // Check notes length
-  const notesText = patient.note?.trim() || '';
-  const notesHeight = notesText ? estimateTextHeight(notesText, 12) : 0;
-
-  // Determine if current treatment can fit on first page
-  const remainingSpace = PAGE_HEIGHT - currentY;
-
-  // If current treatment is short, or it can fit with plenty of room to spare, keep it on page 1
-  if (currentTreatmentText && (currentTreatmentHeight < 50 || remainingSpace > currentTreatmentHeight + 30)) {
-    // Current treatment is short or fits well, add it to page 1
-    addTextSection('Current Treatment', currentTreatmentText);
-
-    // If notes are also short and can fit on page 1, add them too
-    if (notesText && currentY + notesHeight < PAGE_HEIGHT) {
-      addTextSection('Notes', notesText);
-    }
-    // Otherwise, notes go to page 2 if they exist
-    else if (notesText) {
-      addNewPage();
-      addTextSection('Notes', notesText, false); // Skip page check since we just created a new page
-    }
-  }
-  // If current treatment is long, or treatment + notes need their own page
-  else if (currentTreatmentText) {
-    // Current treatment is long, move to page 2
-    addNewPage();
-    addTextSection('Current Treatment', currentTreatmentText, false);
-
-    // Check if notes can fit on the same page after treatment
-    if (notesText && currentY + notesHeight < PAGE_HEIGHT) {
-      addTextSection('Notes', notesText);
-    }
-    // Notes are also long, move to page 3
-    else if (notesText) {
-      addNewPage();
-      addTextSection('Notes', notesText, false);
-    }
-  }
-  // If only notes exist but no treatment
-  else if (notesText) {
-    // Check if notes can fit on first page
-    if (remainingSpace > notesHeight + 20) {
-      addTextSection('Notes', notesText);
-    } else {
-      addNewPage();
-      addTextSection('Notes', notesText, false);
-    }
-  }
 
   // Add table data if available
   if (patient.tableData) {

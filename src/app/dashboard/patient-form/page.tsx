@@ -1,16 +1,21 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { usePatients } from '../../context/PatientContext';
+import { usePatients, Patient } from '../../context/PatientContext';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 
 export default function PatientForm() {
-  const { addPatient, isLoading, error } = usePatients();
+  const { addPatient, addVisit, patients, isLoading, error } = usePatients();
   const router = useRouter();
   const { isStaffAuth } = useAuth();
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  const [mode, setMode] = useState<'new' | 'existing'>('new');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Patient[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
   // For staff, restrict specific fields but allow submission
   const isStaff = Boolean(isStaffAuth);
@@ -29,11 +34,26 @@ export default function PatientForm() {
     pastMedicalHistory: '',
     drugHistory: '',
     pastSurgicalHistory: '',
+    examination: '',
     note: '',
     tableData: '',
     followUpDate: '',
     // clinicId is not included here as it's auto-generated
   });
+
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setSearchResults([]);
+      return;
+    }
+    const lowerQuery = searchQuery.toLowerCase();
+    const results = patients.filter(p => 
+      p.name.toLowerCase().includes(lowerQuery) || 
+      (p.clinicId && p.clinicId.toLowerCase().includes(lowerQuery)) ||
+      (p.mobileNumber && p.mobileNumber.toLowerCase().includes(lowerQuery))
+    );
+    setSearchResults(results.slice(0, 10)); // max 10 results
+  }, [searchQuery, patients]);
 
   // State for table cells with dynamic sizing (default 8x8)
   const [tableCells, setTableCells] = useState(
@@ -132,8 +152,13 @@ export default function PatientForm() {
 
     try {
       setFormSubmitted(true);
-      // Since clinicId is auto-generated on the server, we don't include it in the form data
-      await addPatient({ ...formData, clinicId: '' });
+      
+      if (mode === 'existing' && selectedPatient) {
+        await addVisit(selectedPatient.id, { ...formData, clinicId: '' });
+      } else {
+        // Since clinicId is auto-generated on the server, we don't include it in the form data
+        await addPatient({ ...formData, clinicId: '' });
+      }
 
       // Reset form after submission
       setTimeout(() => {
@@ -151,6 +176,7 @@ export default function PatientForm() {
           pastMedicalHistory: '',
           drugHistory: '',
           pastSurgicalHistory: '',
+          examination: '',
           note: '',
           tableData: '',
           followUpDate: '',
@@ -158,7 +184,10 @@ export default function PatientForm() {
         // Reset table cells
         setTableCells(Array(8).fill(null).map(() => Array(8).fill('')));
         setFormSubmitted(false);
-        router.push('/dashboard/patients'); // Redirect to patients list
+        setSelectedPatient(null);
+        setMode('new');
+        setSearchQuery('');
+        setCurrentStep(1); // Reset to first step for next registration
       }, 1500);
     } catch (err) {
       console.error('Error submitting patient data:', err);
@@ -191,6 +220,99 @@ export default function PatientForm() {
           </p>
         </div>
 
+        {/* Mode Toggle */}
+        <div className="max-w-3xl mx-auto mb-8 flex justify-center">
+          <div className="inline-flex bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+            <button
+              onClick={() => { setMode('new'); setSelectedPatient(null); setCurrentStep(1); }}
+              className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'new' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+            >
+              New Patient
+            </button>
+            <button
+              onClick={() => setMode('existing')}
+              className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'existing' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+            >
+              Existing Patient
+            </button>
+          </div>
+        </div>
+
+        {/* Existing Patient Search */}
+        {mode === 'existing' && !selectedPatient && (
+          <div className="max-w-3xl mx-auto mb-8">
+            <input
+              type="text"
+              placeholder="Search patient by name, mobile, or clinic ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            />
+            {searchQuery && searchResults.length > 0 && (
+              <div className="mt-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden shadow-lg">
+                {searchResults.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setSelectedPatient(p);
+                      setFormData(prev => ({
+                        ...prev,
+                        name: p.name,
+                        dob: p.dob || '',
+                        sex: p.sex || '',
+                        mobileNumber: p.mobileNumber || '',
+                        hospitalFileNumber: p.hospitalFileNumber || '',
+                        diagnosis: '',
+                        treatment: '',
+                        currentTreatment: '',
+                        history: '',
+                        pastMedicalHistory: '',
+                        drugHistory: '',
+                        pastSurgicalHistory: '',
+                        examination: '',
+                        note: '',
+                        followUpDate: ''
+                      }));
+                      setCurrentStep(2); // Jump straight to medical info
+                    }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
+                  >
+                    <div className="font-medium text-gray-900 dark:text-white">{p.name}</div>
+                    <div className="text-sm text-gray-500 mt-1">
+                      {p.clinicId && <span className="mr-3">ID: {p.clinicId}</span>}
+                      {p.dob && <span>DOB: {p.dob}</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {searchQuery && searchResults.length === 0 && (
+              <div className="mt-2 p-4 text-center text-gray-500 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                No patients found matching "{searchQuery}"
+              </div>
+            )}
+          </div>
+        )}
+
+        {mode === 'existing' && selectedPatient && (
+           <div className="max-w-3xl mx-auto mb-8 flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-lg border border-indigo-100 dark:border-indigo-800">
+             <div>
+               <span className="text-sm text-indigo-600 dark:text-indigo-400 block mb-1">Adding new visit for</span>
+               <span className="font-bold text-lg text-indigo-900 dark:text-indigo-100">{selectedPatient.name}</span>
+               <span className="text-sm text-indigo-700 dark:text-indigo-300 ml-3">ID: {selectedPatient.clinicId}</span>
+             </div>
+             <button 
+               onClick={() => { setSelectedPatient(null); setCurrentStep(1); }} 
+               className="text-sm font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 bg-white dark:bg-gray-800 px-3 py-1.5 rounded shadow-sm border border-indigo-200 dark:border-indigo-700 transition-colors"
+             >
+               Change Patient
+             </button>
+           </div>
+        )}
+
+        {/* Form Container (Only show if new patient or if existing patient is selected) */}
+        {(mode === 'new' || (mode === 'existing' && selectedPatient)) && (
+          <>
         {/* Step Navigation */}
         <div className="max-w-3xl mx-auto mb-10">
           <div className="flex justify-between items-center relative">
@@ -251,7 +373,7 @@ export default function PatientForm() {
                 <svg className="w-5 h-5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path>
                 </svg>
-                <span className="font-medium">Patient record created successfully! Redirecting...</span>
+                <span className="font-medium">Patient record created successfully! Ready for the next one.</span>
               </div>
             </div>
           </div>
@@ -373,11 +495,13 @@ export default function PatientForm() {
                         Clinic ID
                       </label>
                       <div className="w-full px-4 py-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-blue-50/50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-300 font-medium">
-                        Auto-generated after submission
+                        {mode === 'existing' && selectedPatient ? selectedPatient.clinicId : 'Auto-generated after submission'}
                       </div>
-                      <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                        Format: [PatientNumber(2-digits)][DDMMYY]
-                      </p>
+                      {mode === 'new' && (
+                        <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                          Format: [PatientNumber(2-digits)][DDMMYY]
+                        </p>
+                      )}
                     </div>
 
                     {/* Age/Year of Diagnosis (Also in Step 1, but keeping as requested by the task if they meant to mirror it. Actually, it's better to render it once, but if task says both steps, we can render it here too. Let's render it to fulfill the list literally) */}
@@ -526,6 +650,25 @@ export default function PatientForm() {
                           disabled={isLoading || formSubmitted || isStaff}
                           className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70 transition-all duration-200"
                           placeholder="Past surgical history details..."
+                        />
+                      </div>
+                    )}
+
+                    {/* Examination */}
+                    {!isStaff && (
+                      <div className="md:col-span-2">
+                        <label htmlFor="examination" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          Examination
+                        </label>
+                        <textarea
+                          id="examination"
+                          name="examination"
+                          value={formData.examination}
+                          onChange={handleChange}
+                          rows={3}
+                          disabled={isLoading || formSubmitted || isStaff}
+                          className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70 transition-all duration-200"
+                          placeholder="Examination details..."
                         />
                       </div>
                     )}
@@ -724,6 +867,8 @@ export default function PatientForm() {
             </div>
           </form>
         </div>
+          </>
+        )}
       </div>
     </div>
   );

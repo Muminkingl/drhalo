@@ -25,6 +25,7 @@ export interface Database {
           past_medical_history: string
           drug_history: string
           past_surgical_history: string
+          examination: string
           note: string | null
           follow_up_date: string
           table_data: string
@@ -47,6 +48,7 @@ export interface Database {
           past_medical_history: string
           drug_history: string
           past_surgical_history: string
+          examination: string
           note?: string | null
           follow_up_date: string
           table_data: string
@@ -69,11 +71,65 @@ export interface Database {
           past_medical_history?: string
           drug_history?: string
           past_surgical_history?: string
+          examination?: string
           note?: string | null
           follow_up_date?: string
           table_data?: string
           created_at?: string
           updated_at?: string
+          user_id?: string
+        }
+      }
+      visits: {
+        Row: {
+          id: string
+          patient_id: string
+          diagnosis: string
+          treatment: string
+          current_treatment: string
+          history: string
+          past_medical_history: string
+          drug_history: string
+          past_surgical_history: string
+          examination: string
+          note: string | null
+          follow_up_date: string
+          table_data: string
+          visited_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          patient_id: string
+          diagnosis?: string
+          treatment?: string
+          current_treatment?: string
+          history?: string
+          past_medical_history?: string
+          drug_history?: string
+          past_surgical_history?: string
+          examination?: string
+          note?: string | null
+          follow_up_date?: string
+          table_data?: string
+          visited_at?: string
+          user_id?: string
+        }
+        Update: {
+          id?: string
+          patient_id?: string
+          diagnosis?: string
+          treatment?: string
+          current_treatment?: string
+          history?: string
+          past_medical_history?: string
+          drug_history?: string
+          past_surgical_history?: string
+          examination?: string
+          note?: string | null
+          follow_up_date?: string
+          table_data?: string
+          visited_at?: string
           user_id?: string
         }
       }

@@ -1,17 +1,27 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { usePatients, Patient } from '../../context/PatientContext';
+import { usePatients, Patient, Visit } from '../../context/PatientContext';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import PatientEditForm from '../../components/PatientEditForm';
+import InvestigationModal from '../../components/InvestigationModal';
 import { exportToExcel } from '@/lib/excelExport';
 import { generatePatientPDF } from '@/lib/pdfGenerator';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
 export default function PatientsPage() {
-  const { patients, deletePatient, editPatient, isLoading, error, refreshPatients } = usePatients();
-  const { isStaffAuth } = useAuth();
+  const { patients, deletePatient, editPatient, isLoading, error, refreshPatients, getPatientVisits, editVisit } = usePatients();
+  const { isStaffAuth, isReceptionAuth, isAuthenticated } = useAuth();
+  const router = useRouter();
+  
+  useEffect(() => {
+    if (isReceptionAuth) {
+      router.push('/dashboard');
+    }
+  }, [isReceptionAuth, router]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -24,7 +34,58 @@ export default function PatientsPage() {
   const [customMaxAge, setCustomMaxAge] = useState<string>('');
   const [showCustomAgeInputs, setShowCustomAgeInputs] = useState(false);
   // New filter state
-  const [activeFilter, setActiveFilter] = useState<string>('all'); // Current active filter field
+  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [patientVisits, setPatientVisits] = useState<Visit[]>([]);
+  const [isLoadingVisits, setIsLoadingVisits] = useState(false);
+
+  // Visit selector modals
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [showEditVisitModal, setShowEditVisitModal] = useState(false);
+  const [editingVisit, setEditingVisit] = useState<Visit | null>(null);
+  const [editVisitForm, setEditVisitForm] = useState<Partial<Visit>>({});
+  const [isSavingVisit, setIsSavingVisit] = useState(false);
+  
+  // Print options modal
+  const [showPrintOptionsModal, setShowPrintOptionsModal] = useState(false);
+  const [printingVisit, setPrintingVisit] = useState<Visit | null>(null);
+
+  // Quick Actions states
+  const [showQuickExamModal, setShowQuickExamModal] = useState(false);
+  const [showQuickPrescriptionModal, setShowQuickPrescriptionModal] = useState(false);
+  const [showQuickInvestigationModal, setShowQuickInvestigationModal] = useState(false);
+  const [quickActionVisit, setQuickActionVisit] = useState<Visit | null>(null);
+  const [quickActionPatient, setQuickActionPatient] = useState<Patient | null>(null);
+  const [isPerformingQuickAction, setIsPerformingQuickAction] = useState<string | null>(null); // patientId
+  const [patientVisitsMap, setPatientVisitsMap] = useState<Record<string, Visit[]>>({});
+  const [selectedVisitIdMap, setSelectedVisitIdMap] = useState<Record<string, string>>({});
+
+  // Fetch all visit summaries for the dropdowns
+  const fetchAllVisitSummaries = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('visits')
+        .select('id, patient_id, visited_at')
+        .order('visited_at', { ascending: false });
+
+      if (error) throw error;
+
+      const map: Record<string, Visit[]> = {};
+      data?.forEach((v: any) => {
+        if (!map[v.patient_id]) map[v.patient_id] = [];
+        map[v.patient_id].push(v as Visit);
+      });
+      setPatientVisitsMap(map);
+    } catch (err) {
+      console.error('Error fetching visit summaries:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchAllVisitSummaries();
+    }
+  }, [isAuthenticated, patients]);
+
 
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -353,9 +414,75 @@ export default function PatientsPage() {
     handlePrintGeneric(patient, content, 'Treatment Card');
   };
 
+  // Handle Quick Actions for speed
+  const handleQuickAction = async (patient: Patient, actionType: 'exam' | 'prescription' | 'investigation') => {
+    try {
+      setIsPerformingQuickAction(patient.id);
+      
+      // Get the selected visit ID from the map, or default to the latest
+      const visits = patientVisitsMap[patient.id] || [];
+      const selectedId = selectedVisitIdMap[patient.id] || (visits.length > 0 ? visits[0].id : null);
+
+      if (!selectedId) {
+        alert("No visits found for this patient. Please add a visit first.");
+        return;
+      }
+      
+      // Fetch the FULL visit data for the selected visit
+      const { data: fullVisit, error } = await supabase
+        .from('visits')
+        .select('*')
+        .eq('id', selectedId)
+        .single();
+
+      if (error || !fullVisit) throw new Error('Failed to load visit details');
+      
+      setQuickActionVisit(fullVisit as Visit);
+      setQuickActionPatient(patient);
+      setEditVisitForm(fullVisit as Visit);
+      
+      if (actionType === 'exam') setShowQuickExamModal(true);
+      else if (actionType === 'prescription') setShowQuickPrescriptionModal(true);
+      else if (actionType === 'investigation') setShowQuickInvestigationModal(true);
+      
+    } catch (err) {
+      console.error('Error starting quick action:', err);
+      alert('Failed to load visit data.');
+    } finally {
+      setIsPerformingQuickAction(null);
+    }
+  };
 
 
-  // Handle report generation
+
+  // Handle report generation for a specific visit
+  const handleGenerateVisitReport = async (patient: Patient, visit: Visit) => {
+    try {
+      // Create a virtual patient object with data from this specific visit
+      const visitPatient: Patient = {
+        ...patient,
+        diagnosis: visit.diagnosis || patient.diagnosis,
+        treatment: visit.treatment || patient.treatment,
+        currentTreatment: visit.current_treatment || patient.currentTreatment,
+        history: visit.history || patient.history,
+        pastMedicalHistory: visit.past_medical_history || patient.pastMedicalHistory,
+        drugHistory: visit.drug_history || patient.drugHistory,
+        pastSurgicalHistory: visit.past_surgical_history || patient.pastSurgicalHistory,
+        examination: visit.examination || patient.examination,
+        followUpDate: visit.follow_up_date || patient.followUpDate,
+        note: visit.note || patient.note,
+        tableData: visit.table_data || patient.tableData,
+        prescription: visit.prescription || patient.prescription,
+      };
+      
+      await generatePatientPDF(visitPatient);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF report. Please try again.');
+    }
+  };
+
+  // Handle report generation (default to latest)
   const handleGenerateReport = async (patient: Patient) => {
     try {
       await generatePatientPDF(patient);
@@ -504,10 +631,21 @@ export default function PatientsPage() {
   });
 
   // Handle patient selection for details view
-  const handleViewPatient = (patient: Patient) => {
+  const handleViewPatient = async (patient: Patient) => {
     setSelectedPatient(patient);
-    setIsEditing(false); // Close edit form when selecting a new patient
-    setShowMobileDetails(true); // Show details panel on mobile
+    setShowMobileDetails(true);
+    setIsEditing(false);
+    
+    // Fetch visits for this patient
+    setIsLoadingVisits(true);
+    try {
+      const visits = await getPatientVisits(patient.id);
+      setPatientVisits(visits);
+    } catch (err) {
+      console.error('Error loading visits:', err);
+    } finally {
+      setIsLoadingVisits(false);
+    }
   };
 
   // Handle patient deletion
@@ -607,6 +745,7 @@ export default function PatientsPage() {
   }
 
   return (
+    <>
     <div className="p-4 md:p-6">
       {/* Header Section */}
       <div className="mb-6">
@@ -842,10 +981,18 @@ export default function PatientsPage() {
                     <div className="flex justify-between items-start">
                       <div>
                         <h3 className="text-sm font-medium text-gray-900 dark:text-white">{patient.name}</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {patient.diagnosis} | Age: {calculateAge(patient.dob)} | DOB: {patient.dob}
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {patientVisitsMap[patient.id] && patientVisitsMap[patient.id].length > 0 && (
+                            <span className="inline-flex items-center text-[9px] bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800/50">
+                              <svg className="h-2 w-2 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" /></svg>
+                              Latest: Visit {patientVisitsMap[patient.id].length}
+                            </span>
+                          )}
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Age: {calculateAge(patient.dob)} | {patient.diagnosis}
+                          </p>
+                        </div>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
                           Added: {formatDate(patient.createdAt)}
                         </p>
                       </div>
@@ -858,6 +1005,79 @@ export default function PatientsPage() {
                         </span>
                       </div>
                     </div>
+
+                    {/* Quick Actions Row */}
+                    {!isStaffAuth && (
+                      <div className="mt-3 flex items-center gap-2 pt-3 border-t border-gray-100 dark:border-gray-600/50 relative">
+                        {isPerformingQuickAction === patient.id && (
+                          <div className="absolute inset-0 bg-white/60 dark:bg-gray-800/60 z-10 flex items-center justify-center rounded-lg">
+                            <svg className="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          </div>
+                        )}
+                        
+                        {/* Visit Selector Dropdown */}
+                        <div className="relative">
+                          <select
+                            value={selectedVisitIdMap[patient.id] || (patientVisitsMap[patient.id]?.[0]?.id || '')}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedVisitIdMap(prev => ({ ...prev, [patient.id]: e.target.value }));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="appearance-none text-[10px] font-bold bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 pr-6 focus:ring-2 focus:ring-indigo-500 text-gray-700 dark:text-gray-300 cursor-pointer hover:border-indigo-300 transition-colors"
+                          >
+                            {(patientVisitsMap[patient.id] || []).map((v, i, arr) => (
+                              <option key={v.id} value={v.id}>
+                                V{arr.length - i}
+                              </option>
+                            ))}
+                            {(patientVisitsMap[patient.id] || []).length === 0 && (
+                              <option value="">No Visit</option>
+                            )}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-gray-400">
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickAction(patient, 'exam');
+                          }}
+                          disabled={isPerformingQuickAction === patient.id}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-[10px] font-bold uppercase tracking-tight hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors border border-blue-100 dark:border-blue-900/30"
+                          title="Quick Examination"
+                        >
+                          Exam
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickAction(patient, 'prescription');
+                          }}
+                          disabled={isPerformingQuickAction === patient.id}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-lg text-[10px] font-bold uppercase tracking-tight hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors border border-green-100 dark:border-green-900/30"
+                          title="Quick Prescription"
+                        >
+                          Rx
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickAction(patient, 'investigation');
+                          }}
+                          disabled={isPerformingQuickAction === patient.id}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-lg text-[10px] font-bold uppercase tracking-tight hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors border border-purple-100 dark:border-purple-900/30"
+                          title="Quick Investigation Upload"
+                        >
+                          Labs
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -903,7 +1123,7 @@ export default function PatientsPage() {
                     </div>
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => handleGenerateReport(selectedPatient)}
+                        onClick={() => setShowPdfModal(true)}
                         className="p-2 text-green-600 hover:bg-green-100 rounded-md transition duration-150"
                         title="Generate PDF Report"
                       >
@@ -911,26 +1131,7 @@ export default function PatientsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                       </button>
-                      <button
-                        onClick={() => handleLogVisit(selectedPatient)}
-                        className="p-2 text-amber-600 hover:bg-amber-100 rounded-md transition duration-150"
-                        title="Log Visit (Returning Patient)"
-                      >
-                        <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
-                      {!isStaffAuth && (
-                        <button
-                          onClick={() => setIsEditing(true)}
-                          className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-md transition duration-150"
-                          title="Edit Patient"
-                        >
-                          <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                      )}
+
                       <button
                         onClick={() => handleDeletePatient(selectedPatient.id)}
                         disabled={isDeleting === selectedPatient.id}
@@ -952,7 +1153,7 @@ export default function PatientsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div className="grid grid-cols-1 gap-6 mb-6">
                     <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                       <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Personal Information</h3>
                       <div className="space-y-3">
@@ -974,146 +1175,134 @@ export default function PatientsPage() {
                             <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.mobileNumber}</span>
                           </div>
                         )}
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Medical Information</h3>
-                      <div className="space-y-3">
-                        {selectedPatient.ageOfDiagnosis && (
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Diagnosis Age</span>
-                            <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.ageOfDiagnosis}</span>
-                          </div>
-                        )}
-                        {selectedPatient.diagnosis && (
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Diagnosis</span>
-                            <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.diagnosis}</span>
-                          </div>
-                        )}
-                        {selectedPatient.treatment && (
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Treatment</span>
-                            <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.treatment}</span>
-                          </div>
-                        )}
-                        {selectedPatient.currentTreatment ? (
-                          <div className="flex flex-col">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Current Treatment</span>
-                              <button
-                                onClick={() => handlePrintTreatment(selectedPatient)}
-                                title="Print treatment card for this patient"
-                                className="flex items-center px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
-                              >
-                                <svg className="h-3 w-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                </svg>
-                                Print
-                              </button>
-                            </div>
-                            <div className="mt-1 bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600 max-h-40 overflow-y-auto">
-                              <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">{selectedPatient.currentTreatment}</p>
-                            </div>
-                          </div>
-                        ) : null}
-                        <div className="flex justify-between">
-                          <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Clinic ID</span>
-                          <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.clinicId}</span>
+                        <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                          <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">Clinic ID</span>
+                          <span className="text-sm font-bold text-gray-900 dark:text-white bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded">{selectedPatient.clinicId}</span>
                         </div>
-                        {selectedPatient.history && (
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">History</span>
-                            <div className="mt-1 bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600 max-h-40 overflow-y-auto">
-                              <span className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">{selectedPatient.history}</span>
-                            </div>
-                          </div>
-                        )}
-                        {selectedPatient.pastMedicalHistory && (
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Past Medical History</span>
-                            <div className="mt-1 bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600 max-h-40 overflow-y-auto">
-                              <span className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">{selectedPatient.pastMedicalHistory}</span>
-                            </div>
-                          </div>
-                        )}
-                        {selectedPatient.drugHistory && (
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Drug History</span>
-                            <div className="mt-1 bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600 max-h-40 overflow-y-auto">
-                              <span className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">{selectedPatient.drugHistory}</span>
-                            </div>
-                          </div>
-                        )}
-                        {selectedPatient.pastSurgicalHistory && (
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Past Surgical History</span>
-                            <div className="mt-1 bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600 max-h-40 overflow-y-auto">
-                              <span className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">{selectedPatient.pastSurgicalHistory}</span>
-                            </div>
-                          </div>
-                        )}
-                        {selectedPatient.followUpDate && (
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Follow Up Date</span>
-                            <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.followUpDate}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Notes Section */}
-                  {selectedPatient.note && (
-                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes</h3>
-                      <p className="text-sm text-gray-800 dark:text-gray-200">
-                        {selectedPatient.note}
-                      </p>
-                    </div>
-                  )}
 
-                  {/* Table Data Section */}
-                  {selectedPatient.tableData && (
-                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg mt-6">
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Additional Data</h3>
-                      <div className="overflow-x-auto">
-                        <table className="w-full border-collapse rounded-lg overflow-hidden">
-                          <tbody>
-                            {(() => {
-                              try {
-                                const tableData = JSON.parse(selectedPatient.tableData);
-                                if (Array.isArray(tableData) && tableData.length > 0) {
-                                  return tableData.map((row, rowIndex) => (
-                                    <tr key={rowIndex}>
-                                      {Array.isArray(row) && row.map((cell, colIndex) => (
-                                        <td
-                                          key={`${rowIndex}-${colIndex}`}
-                                          className={`border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs ${cell ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100' :
-                                            'bg-gray-100 dark:bg-gray-800/50'
-                                            }`}
-                                        >
-                                          {cell || ''}
-                                        </td>
-                                      ))}
-                                    </tr>
-                                  ));
-                                }
-                              } catch (e) {
-                                return (
-                                  <tr>
-                                    <td className="text-sm text-red-500 p-2">Error parsing table data</td>
-                                  </tr>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </tbody>
-                        </table>
-                      </div>
+                  {/* Visit History Section */}
+                  <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                        <svg className="h-5 w-5 mr-2 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Visit History
+                        <span className="ml-2 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full font-normal">
+                          {patientVisits.length} visits
+                        </span>
+                      </h3>
                     </div>
-                  )}
+
+                    {isLoadingVisits ? (
+                      <div className="flex justify-center py-8">
+                        <svg className="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                    ) : patientVisits.length > 0 ? (
+                      <div className="max-h-[500px] overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                        {patientVisits.map((visit, index) => (
+                          <details key={visit.id} className="group bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-100 dark:border-gray-600 overflow-hidden transition-all duration-200" open={index === 0}>
+                            <summary className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 list-none">
+                              <div className="flex items-center gap-3">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                    {formatDate(visit.visited_at)}
+                                  </span>
+                                  {index === 0 && (
+                                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider">Latest Visit</span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[150px] md:max-w-[300px]">
+                                  {visit.diagnosis || 'No diagnosis'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {!isStaffAuth && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPrintingVisit(visit);
+                                      setShowPrintOptionsModal(true);
+                                    }}
+                                    className="text-[10px] px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                                  >
+                                    Print
+                                  </button>
+                                )}
+                                {!isStaffAuth && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingVisit(visit);
+                                      setEditVisitForm(visit);
+                                      setShowEditVisitModal(false);
+                                      setIsEditing(false);
+                                    }}
+                                    className="text-[10px] px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                                  >
+                                    Edit
+                                  </button>
+                                )}
+                                <svg className="h-4 w-4 text-gray-400 group-open:rotate-180 transition-transform duration-200" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </div>
+                            </summary>
+                            
+                            <div className="p-4 pt-0 border-t border-gray-100 dark:border-gray-600 grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                              {visit.diagnosis && (
+                                <div>
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block uppercase tracking-tighter mb-1">Diagnosis</span>
+                                  <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">{visit.diagnosis}</p>
+                                </div>
+                              )}
+                              {visit.treatment && (
+                                <div>
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block uppercase tracking-tighter mb-1">Treatment</span>
+                                  <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">{visit.treatment}</p>
+                                </div>
+                              )}
+                              {visit.examination && (
+                                <div className="md:col-span-2">
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block uppercase tracking-tighter mb-1">Examination</span>
+                                  <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap bg-white dark:bg-gray-800 p-2 rounded border border-gray-100 dark:border-gray-700">{visit.examination}</p>
+                                </div>
+                              )}
+                              {visit.current_treatment && (
+                                <div className="md:col-span-2">
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block uppercase tracking-tighter mb-1">Current Treatment</span>
+                                  <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap bg-white dark:bg-gray-800 p-2 rounded border border-gray-100 dark:border-gray-700">{visit.current_treatment}</p>
+                                </div>
+                              )}
+                              {visit.prescription && (
+                                <div className="md:col-span-2">
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block uppercase tracking-tighter mb-1">Prescription</span>
+                                  <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap bg-white dark:bg-gray-800 p-2 rounded border border-gray-100 dark:border-gray-700">{visit.prescription}</p>
+                                </div>
+                              )}
+                              {visit.note && (
+                                <div className="md:col-span-2 bg-amber-50 dark:bg-amber-900/10 p-2 rounded border border-amber-100 dark:border-amber-900/30">
+                                  <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 block uppercase tracking-tighter mb-1">Internal Note</span>
+                                  <p className="text-sm text-gray-700 dark:text-gray-300 italic">{visit.note}</p>
+                                </div>
+                              )}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-dashed border-gray-200 dark:border-gray-600">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">No visit history found for this patient.</p>
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div>
@@ -1152,5 +1341,318 @@ export default function PatientsPage() {
         </div>
       </div>
     </div>
+
+      {/* PDF Visit Selector Modal */}
+      {showPdfModal && selectedPatient && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Generate PDF — Select Visit</h3>
+              <button onClick={() => setShowPdfModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-4 space-y-2 max-h-80 overflow-y-auto">
+              {patientVisits.map((visit, index) => (
+                <button
+                  key={visit.id}
+                  onClick={() => {
+                    handleGenerateVisitReport(selectedPatient, visit);
+                    setShowPdfModal(false);
+                  }}
+                  className="w-full text-left flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-600 transition-colors"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">Visit {patientVisits.length - index}</span>
+                      {index === 0 && <span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 rounded-full font-bold uppercase">Latest</span>}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(visit.visited_at)} · {visit.diagnosis || 'No diagnosis'}</p>
+                  </div>
+                  <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Visit Modal */}
+      {editingVisit && selectedPatient && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Visit</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(editingVisit.visited_at)} · {selectedPatient.name}</p>
+              </div>
+              <button onClick={() => setEditingVisit(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <form className="p-5 space-y-4" onSubmit={async (e) => {
+              e.preventDefault();
+              setIsSavingVisit(true);
+              try {
+                await editVisit(editingVisit.id, editVisitForm);
+                const updated = await getPatientVisits(selectedPatient.id);
+                setPatientVisits(updated);
+                setEditingVisit(null);
+              } catch (err) {
+                console.error(err);
+              } finally {
+                setIsSavingVisit(false);
+              }
+            }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {([
+                  'diagnosis',
+                  'treatment',
+                  'current_treatment',
+                  'history',
+                  'past_medical_history',
+                  'drug_history',
+                  'past_surgical_history',
+                  'examination',
+                  'prescription',
+                  'follow_up_date',
+                  'note'
+                ] as (keyof Visit)[]).map((field) => (
+                  <div key={field} className={field === 'current_treatment' || field === 'history' || field === 'note' || field === 'examination' || field === 'prescription' ? 'md:col-span-2' : ''}>
+                    <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-tighter mb-1">
+                      {field.replace(/_/g, ' ')}
+                    </label>
+                    <textarea
+                      rows={field === 'current_treatment' || field === 'history' ? 3 : 2}
+                      className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                      value={(editVisitForm[field] as string) || ''}
+                      onChange={(e) => setEditVisitForm(prev => ({ ...prev, [field]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+                
+                {/* Investigation Upload — opens real modal */}
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tighter mb-2 flex items-center gap-2">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Investigation Images
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickActionVisit(editingVisit);
+                      setQuickActionPatient(selectedPatient);
+                      setShowQuickInvestigationModal(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-3 p-4 bg-purple-50 dark:bg-purple-900/20 border-2 border-dashed border-purple-200 dark:border-purple-800/50 rounded-xl text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors group"
+                  >
+                    <div className="p-2 bg-white dark:bg-gray-700 rounded-full shadow-sm group-hover:shadow-purple-200 dark:group-hover:shadow-none transition-shadow">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-semibold">Upload Investigation Images</span>
+                    <span className="text-xs text-purple-400 dark:text-purple-500">JPG · PNG · WEBP</span>
+                  </button>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 mt-2 pt-4 border-t border-gray-100 dark:border-gray-700">
+                <button type="button" onClick={() => setEditingVisit(null)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">Cancel</button>
+                <button type="submit" disabled={isSavingVisit} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                  {isSavingVisit && <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                  Save Visit
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Print Options Modal */}
+      {showPrintOptionsModal && printingVisit && selectedPatient && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-sm">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Print Options</h3>
+              <button onClick={() => setShowPrintOptionsModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <button
+                onClick={() => {
+                  handlePrintGeneric(selectedPatient, printingVisit.prescription || '', 'Prescription Card');
+                  setShowPrintOptionsModal(false);
+                }}
+                className="w-full flex items-center gap-3 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/30 bg-indigo-50/50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/20 transition-colors"
+              >
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                </div>
+                <span className="font-semibold">Prescription</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  handlePrintGeneric(selectedPatient, printingVisit.treatment || '', 'Treatment Card');
+                  setShowPrintOptionsModal(false);
+                }}
+                className="w-full flex items-center gap-3 p-4 rounded-xl border border-green-100 dark:border-green-900/30 bg-green-50/50 dark:bg-green-900/10 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/20 transition-colors"
+              >
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                </div>
+                <span className="font-semibold">Treatment</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handlePrintGeneric(selectedPatient, printingVisit.current_treatment || '', 'Current Treatment Card');
+                  setShowPrintOptionsModal(false);
+                }}
+                className="w-full flex items-center gap-3 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30 bg-blue-50/50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/20 transition-colors"
+              >
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                </div>
+                <span className="font-semibold">Current Treatment</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Examination Modal */}
+      {showQuickExamModal && quickActionVisit && quickActionPatient && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Quick Examination</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{quickActionPatient.name} · Latest Visit</p>
+              </div>
+              <button onClick={() => setShowQuickExamModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <form className="p-5 space-y-4" onSubmit={async (e) => {
+              e.preventDefault();
+              setIsSavingVisit(true);
+              try {
+                await editVisit(quickActionVisit.id, editVisitForm);
+                setShowQuickExamModal(false);
+                if (selectedPatient?.id === quickActionPatient.id) {
+                   const updated = await getPatientVisits(selectedPatient.id);
+                   setPatientVisits(updated);
+                }
+              } catch (err) {
+                console.error(err);
+              } finally {
+                setIsSavingVisit(false);
+              }
+            }}>
+              <div>
+                <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-tighter mb-1">Examination Results</label>
+                <textarea
+                  rows={6}
+                  autoFocus
+                  className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  value={(editVisitForm.examination as string) || ''}
+                  onChange={(e) => setEditVisitForm(prev => ({ ...prev, examination: e.target.value }))}
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setShowQuickExamModal(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg">Cancel</button>
+                <button type="submit" disabled={isSavingVisit} className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                  {isSavingVisit && <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                  Save Exam
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Prescription Modal */}
+      {showQuickPrescriptionModal && quickActionVisit && quickActionPatient && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Quick Prescription</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{quickActionPatient.name} · Latest Visit</p>
+              </div>
+              <button onClick={() => setShowQuickPrescriptionModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <form className="p-5 space-y-4" onSubmit={async (e) => {
+              e.preventDefault();
+              setIsSavingVisit(true);
+              try {
+                await editVisit(quickActionVisit.id, editVisitForm);
+                setShowQuickPrescriptionModal(false);
+                if (selectedPatient?.id === quickActionPatient.id) {
+                   const updated = await getPatientVisits(selectedPatient.id);
+                   setPatientVisits(updated);
+                }
+              } catch (err) {
+                console.error(err);
+              } finally {
+                setIsSavingVisit(false);
+              }
+            }}>
+              <div>
+                <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-tighter mb-1">Prescription</label>
+                <textarea
+                  rows={8}
+                  autoFocus
+                  className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  value={(editVisitForm.prescription as string) || ''}
+                  onChange={(e) => setEditVisitForm(prev => ({ ...prev, prescription: e.target.value }))}
+                />
+              </div>
+              <div className="flex justify-between items-center pt-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGeneric(quickActionPatient, editVisitForm.prescription || '', 'Prescription Card')}
+                    className="px-3 py-2 text-xs font-medium bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded-lg border border-green-100 dark:border-green-900/30 hover:bg-green-100 transition-colors flex items-center gap-1"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                    Print Rx
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGeneric(quickActionPatient, editVisitForm.treatment || '', 'Treatment Card')}
+                    className="px-3 py-2 text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-lg border border-blue-100 dark:border-blue-900/30 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    Print Treatment
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setShowQuickPrescriptionModal(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg">Cancel</button>
+                  <button type="submit" disabled={isSavingVisit} className="px-6 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                    {isSavingVisit && <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                    Save Rx
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Investigation Modal */}
+      {showQuickInvestigationModal && quickActionVisit && quickActionPatient && (
+        <InvestigationModal
+          patient={quickActionPatient}
+          visit={quickActionVisit}
+          onClose={() => setShowQuickInvestigationModal(false)}
+        />
+      )}
+    </>
   );
-} 
+}

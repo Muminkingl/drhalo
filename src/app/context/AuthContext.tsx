@@ -15,6 +15,7 @@ type AuthContextType = {
   // New: local role flags
   isStaffAuth?: boolean;
   isAdminAuth?: boolean;
+  isReceptionAuth?: boolean;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,6 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAdminAuth, setIsAdminAuth] = useState(false); // Track if user is authenticated as admin
   const [isStaffAuth, setIsStaffAuth] = useState(false); // Track if user is authenticated as staff
+  const [isReceptionAuth, setIsReceptionAuth] = useState(false); // Track if user is authenticated as reception
   const [userId, setUserId] = useState<string | null>(null);
   const router = useRouter();
 
@@ -48,6 +50,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (staffAuth === 'true') {
           setIsStaffAuth(true);
           // Use the same sentinel ID to ensure data visibility and operations
+          setUserId(ADMIN_USER_ID);
+          setIsLoading(false);
+          return;
+        }
+
+        // Check if reception is authenticated via localStorage
+        const receptionAuth = localStorage.getItem('receptionAuth');
+        if (receptionAuth === 'true') {
+          setIsReceptionAuth(true);
           setUserId(ADMIN_USER_ID);
           setIsLoading(false);
           return;
@@ -90,6 +101,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsStaffAuth(true);
             setUserId(ADMIN_USER_ID);
           }
+          // If session is null and reception auth was set, maintain reception auth
+          const receptionAuth = localStorage.getItem('receptionAuth');
+          if (receptionAuth === 'true') {
+            setIsReceptionAuth(true);
+            setUserId(ADMIN_USER_ID);
+          }
         }
       }
     );
@@ -115,6 +132,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Use sentinel so queries work consistently (view/edit allowed for now)
       setUserId(ADMIN_USER_ID);
       localStorage.setItem('staffAuth', 'true');
+      return { success: true };
+    }
+
+    // For reception credentials
+    if (email === 'reception' && password === 'reception365') {
+      setIsReceptionAuth(true);
+      setUserId(ADMIN_USER_ID);
+      localStorage.setItem('receptionAuth', 'true');
       return { success: true };
     }
     
@@ -154,6 +179,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsStaffAuth(false);
         setUserId(null);
       }
+
+      // If reception auth, clear localStorage
+      if (isReceptionAuth) {
+        localStorage.removeItem('receptionAuth');
+        setIsReceptionAuth(false);
+        setUserId(null);
+      }
       
       // Also sign out from Supabase (won't hurt even if not signed in)
       await supabase.auth.signOut();
@@ -167,13 +199,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{ 
       session, 
-      isAuthenticated: !!session || isAdminAuth || isStaffAuth, 
+      isAuthenticated: !!session || isAdminAuth || isStaffAuth || isReceptionAuth, 
       isLoading,
       login, 
       logout,
       userId: userId,
       isStaffAuth,
-      isAdminAuth
+      isAdminAuth,
+      isReceptionAuth
     }}>
       {children}
     </AuthContext.Provider>

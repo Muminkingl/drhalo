@@ -5,6 +5,7 @@ import { usePatients, Patient } from '@/app/context/PatientContext';
 import { supabase, ensureVisitsTableExists } from '@/lib/supabase';
 import { useState } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
+import { useRouter } from 'next/navigation';
 import { generatePatientPDF } from '@/lib/pdfGenerator';
 import {
   Chart as ChartJS,
@@ -34,7 +35,15 @@ ChartJS.register(
 
 export default function ReportsPage() {
   const { patients, isLoading } = usePatients();
-  const { isStaffAuth } = useAuth();
+  const { isStaffAuth, isReceptionAuth } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isReceptionAuth) {
+      router.push('/dashboard');
+    }
+  }, [isReceptionAuth, router]);
+
   const [visitCountToday, setVisitCountToday] = useState<number>(0);
   const [visitPatientsToday, setVisitPatientsToday] = useState<string[]>([]);
   const [showVisitModal, setShowVisitModal] = useState(false);
