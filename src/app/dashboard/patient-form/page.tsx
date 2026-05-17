@@ -224,6 +224,83 @@ export default function PatientForm() {
         {/* ── RECEPTION: Simplified single-step form ─────────────────────── */}
         {isReception && (
           <div className="max-w-lg mx-auto">
+
+            {/* New / Returning toggle */}
+            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-xl p-1 mb-6 gap-1">
+              <button
+                type="button"
+                onClick={() => { setMode('new'); setSelectedPatient(null); setSearchQuery(''); setSearchResults([]); }}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${mode === 'new' ? 'bg-white dark:bg-gray-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
+              >
+                🆕 New Patient
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('existing'); setSelectedPatient(null); setSearchQuery(''); setSearchResults([]); }}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${mode === 'existing' ? 'bg-white dark:bg-gray-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
+              >
+                🔁 Returning Patient
+              </button>
+            </div>
+
+            {/* Returning patient — search */}
+            {mode === 'existing' && !selectedPatient && (
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by name or mobile number…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                />
+                {searchQuery && searchResults.length > 0 && (
+                  <div className="mt-1 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 overflow-hidden shadow-lg">
+                    {searchResults.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPatient(p);
+                          setSearchQuery('');
+                          setSearchResults([]);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors"
+                      >
+                        <div className="font-medium text-gray-900 dark:text-white">{p.name}</div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {p.mobileNumber && <span className="mr-3">📞 {p.mobileNumber}</span>}
+                          {p.dob && <span>DOB: {p.dob}</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchQuery && searchResults.length === 0 && (
+                  <div className="mt-1 p-3 text-sm text-center text-gray-500 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                    No patients found for &quot;{searchQuery}&quot;
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Returning — selected patient banner */}
+            {mode === 'existing' && selectedPatient && (
+              <div className="mb-4 flex items-center justify-between p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                <div>
+                  <p className="text-xs text-indigo-500 font-medium mb-0.5">Returning visit for</p>
+                  <p className="font-bold text-indigo-900 dark:text-indigo-100">{selectedPatient.name}</p>
+                  {selectedPatient.mobileNumber && <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">📞 {selectedPatient.mobileNumber}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedPatient(null); setSearchQuery(''); }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700 shadow-sm transition-colors"
+                >
+                  Change
+                </button>
+              </div>
+            )}
+
             {/* Error */}
             {(localError || error) && (
               <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded-r-lg">
@@ -233,94 +310,110 @@ export default function PatientForm() {
             {/* Success */}
             {formSubmitted && !error && !localError && (
               <div className="mb-4 p-4 bg-green-50 border-l-4 border-green-400 text-green-700 rounded-r-lg">
-                <span className="font-medium">Patient registered successfully! Ready for the next one.</span>
+                <span className="font-medium">
+                  {mode === 'existing' ? 'New visit logged successfully!' : 'Patient registered successfully!'} Ready for the next one.
+                </span>
               </div>
             )}
-            <form
-              onSubmit={handleSubmit}
-              className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-8 space-y-5"
-            >
-              {/* Full Name */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Full Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                  disabled={isLoading || formSubmitted}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
-                  placeholder="Patient's full name"
-                />
-              </div>
-              {/* Gender */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Gender</label>
-                <select
-                  name="sex"
-                  value={formData.sex}
-                  onChange={handleChange}
-                  disabled={isLoading || formSubmitted}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
-                >
-                  <option value="">Select gender</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                </select>
-              </div>
-              {/* DOB */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Date of Birth <span className="text-xs font-normal text-gray-400">(YYYY-MM-DD)</span>
-                </label>
-                <input
-                  type="text"
-                  name="dob"
-                  value={formData.dob}
-                  onChange={handleChange}
-                  disabled={isLoading || formSubmitted}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
-                  placeholder="e.g. 1990-05-20"
-                />
-              </div>
-              {/* Mobile */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mobile Number</label>
-                <input
-                  type="text"
-                  name="mobileNumber"
-                  value={formData.mobileNumber}
-                  onChange={handleChange}
-                  disabled={isLoading || formSubmitted}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
-                  placeholder="Mobile number"
-                />
-              </div>
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Notes</label>
-                <textarea
-                  name="note"
-                  value={formData.note}
-                  onChange={handleChange}
-                  rows={3}
-                  disabled={isLoading || formSubmitted}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
-                  placeholder="Any additional notes about the patient..."
-                />
-              </div>
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={isLoading || formSubmitted || !formData.name.trim()}
-                className="w-full py-3 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors"
+
+            {/* Only show the form fields for new patients OR once a returning patient is selected */}
+            {(mode === 'new' || (mode === 'existing' && selectedPatient)) && (
+              <form
+                onSubmit={handleSubmit}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-8 space-y-5"
               >
-                {isLoading || formSubmitted ? 'Registering…' : 'Register Patient'}
-              </button>
-            </form>
+                {/* Full Name — editable only for new, read-only for returning */}
+                {mode === 'new' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Full Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      required
+                      disabled={isLoading || formSubmitted}
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                      placeholder="Patient&apos;s full name"
+                    />
+                  </div>
+                )}
+                {/* Gender */}
+                {mode === 'new' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Gender</label>
+                    <select
+                      name="sex"
+                      value={formData.sex}
+                      onChange={handleChange}
+                      disabled={isLoading || formSubmitted}
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                    >
+                      <option value="">Select gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                )}
+                {/* DOB */}
+                {mode === 'new' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Date of Birth <span className="text-xs font-normal text-gray-400">(YYYY-MM-DD)</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="dob"
+                      value={formData.dob}
+                      onChange={handleChange}
+                      disabled={isLoading || formSubmitted}
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                      placeholder="e.g. 1990-05-20"
+                    />
+                  </div>
+                )}
+                {/* Mobile */}
+                {mode === 'new' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mobile Number</label>
+                    <input
+                      type="text"
+                      name="mobileNumber"
+                      value={formData.mobileNumber}
+                      onChange={handleChange}
+                      disabled={isLoading || formSubmitted}
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                      placeholder="Mobile number"
+                    />
+                  </div>
+                )}
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Notes</label>
+                  <textarea
+                    name="note"
+                    value={formData.note}
+                    onChange={handleChange}
+                    rows={3}
+                    disabled={isLoading || formSubmitted}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                    placeholder="Any additional notes about the patient..."
+                  />
+                </div>
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={isLoading || formSubmitted || (mode === 'new' && !formData.name.trim())}
+                  className="w-full py-3 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors"
+                >
+                  {isLoading || formSubmitted
+                    ? (mode === 'existing' ? 'Logging Visit…' : 'Registering…')
+                    : (mode === 'existing' ? 'Log Return Visit' : 'Register Patient')}
+                </button>
+              </form>
+            )}
           </div>
         )}
 
