@@ -121,6 +121,14 @@ export default function InvestigationModal({ patient, visit, onClose }: Props) {
   const [lightbox, setLightbox] = useState<Investigation | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Camera state ────────────────────────────────────────────────────────────
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [capturedCount, setCapturedCount] = useState(0);
+
   // Download from R2 URL — uses already-loaded URL, zero extra calls
   const downloadImage = (inv: Investigation) => {
     const a = document.createElement('a');
@@ -183,6 +191,65 @@ export default function InvestigationModal({ patient, visit, onClose }: Props) {
 
   // Cleanup object URLs
   useEffect(() => () => { images.forEach(i => URL.revokeObjectURL(i.preview)); }, []); // eslint-disable-line
+
+  // ── Camera helpers ───────────────────────────────────────────────────────────
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    setCameraOpen(false);
+    setCapturedCount(0);
+    setCameraError(null);
+  }, []);
+
+  const openCamera = useCallback(async (facing: 'environment' | 'user' = cameraFacingMode) => {
+    setCameraError(null);
+    // Stop any existing stream first
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      // Attach to video element after state update
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 50);
+    } catch {
+      setCameraError('Could not access camera. Please allow camera permission and try again.');
+    }
+  }, [cameraFacingMode]);
+
+  const flipCamera = useCallback(() => {
+    const next: 'environment' | 'user' = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    setCameraFacingMode(next);
+    openCamera(next);
+  }, [cameraFacingMode, openCamera]);
+
+  const capturePhoto = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      addFiles([file]);
+      setCapturedCount(c => c + 1);
+    }, 'image/jpeg', 0.95);
+  }, []);
+
+  // Cleanup camera on unmount
+  useEffect(() => () => { streamRef.current?.getTracks().forEach(t => t.stop()); }, []);
 
   // ── Update single image state ─────────────────────────────────────────────
 
@@ -402,21 +469,106 @@ export default function InvestigationModal({ patient, visit, onClose }: Props) {
             </div>
           )}
 
-          {/* Drop zone */}
-          <div
-            onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`relative flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed cursor-pointer select-none transition-colors ${
-              isDragging ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 hover:border-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-900/10'
-            }`}
-          >
-            <svg className={`h-8 w-8 ${isDragging ? 'text-purple-600' : 'text-purple-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">{isDragging ? 'Drop here' : 'Drag & drop images'}</p>
-              <p className="text-xs text-gray-400 mt-1">or click to browse · JPG · PNG · WEBP</p>
+          {/* Source selection buttons */}
+          {!cameraOpen && (
+            <div
+              onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+              className={`relative rounded-xl border-2 border-dashed transition-colors ${
+                isDragging ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 p-6' : 'border-gray-200 dark:border-gray-600'
+              }`}
+            >
+              {isDragging ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-4">
+                  <svg className="h-8 w-8 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                  <p className="text-sm font-semibold text-purple-600">Drop images here</p>
+                </div>
+              ) : (
+                <div className="flex gap-3 p-3">
+                  {/* Gallery */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 flex flex-col items-center gap-2 py-5 px-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-600 hover:border-indigo-400 transition-all group"
+                  >
+                    <svg className="h-7 w-7 text-indigo-400 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Choose from Gallery</span>
+                  </button>
+                  {/* Camera */}
+                  <button
+                    type="button"
+                    onClick={() => openCamera()}
+                    className="flex-1 flex flex-col items-center gap-2 py-5 px-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 border border-gray-200 dark:border-gray-600 hover:border-purple-400 transition-all group"
+                  >
+                    <svg className="h-7 w-7 text-purple-400 group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Open Camera</span>
+                  </button>
+                </div>
+              )}
+              <input ref={fileInputRef} type="file" multiple accept=".jpg,.jpeg,.png,.webp" onChange={onInput} className="hidden" />
             </div>
-            <input ref={fileInputRef} type="file" multiple accept=".jpg,.jpeg,.png,.webp" onChange={onInput} className="hidden" />
-          </div>
+          )}
+
+          {/* Camera error */}
+          {cameraError && (
+            <div className="flex gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <svg className="h-4 w-4 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <p className="text-xs text-red-600 dark:text-red-400">{cameraError}</p>
+            </div>
+          )}
+
+          {/* Live Camera UI */}
+          {cameraOpen && (
+            <div className="rounded-xl overflow-hidden border-2 border-purple-400 dark:border-purple-600 bg-black">
+              {/* Viewfinder */}
+              <div className="relative">
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full max-h-64 object-cover"
+                />
+                {/* Capture count badge */}
+                {capturedCount > 0 && (
+                  <div className="absolute top-2 left-2 bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    {capturedCount} captured
+                  </div>
+                )}
+                {/* Flip camera */}
+                <button
+                  type="button"
+                  onClick={flipCamera}
+                  className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
+                  title="Flip camera"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                </button>
+              </div>
+              {/* Camera controls */}
+              <div className="flex items-center justify-between gap-3 p-3 bg-gray-900">
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  Finish
+                </button>
+                {/* Shutter button */}
+                <button
+                  type="button"
+                  onClick={capturePhoto}
+                  className="w-14 h-14 rounded-full bg-white hover:bg-gray-100 border-4 border-purple-400 flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                  title="Take photo"
+                >
+                  <div className="w-10 h-10 rounded-full bg-purple-500" />
+                </button>
+                <div className="px-4 py-2 text-xs text-white/50 text-center">
+                  Tap shutter<br/>to capture
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Error */}
           {uploadError && (
