@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 export default function PatientForm() {
   const { addPatient, addVisit, patients, isLoading, error } = usePatients();
   const router = useRouter();
-  const { isStaffAuth } = useAuth();
+  const { isStaffAuth, isReceptionAuth } = useAuth();
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -17,8 +17,9 @@ export default function PatientForm() {
   const [searchResults, setSearchResults] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
-  // For staff, restrict specific fields but allow submission
+  // Role flags
   const isStaff = Boolean(isStaffAuth);
+  const isReception = Boolean(isReceptionAuth);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -142,8 +143,8 @@ export default function PatientForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // If not on the last step, just move to the next step
-    if (currentStep < 3) {
+    // Reception only has 1 step — always submit immediately
+    if (currentStep < 3 && !isReception) {
       nextStep();
       return;
     }
@@ -216,11 +217,116 @@ export default function PatientForm() {
             Patient Registration
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300">
-            Enter patient information below
+            {isReception ? 'Fill in the basic patient details' : 'Enter patient information below'}
           </p>
         </div>
 
-        {/* Mode Toggle */}
+        {/* ── RECEPTION: Simplified single-step form ─────────────────────── */}
+        {isReception && (
+          <div className="max-w-lg mx-auto">
+            {/* Error */}
+            {(localError || error) && (
+              <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded-r-lg">
+                <span className="font-medium">{localError || error}</span>
+              </div>
+            )}
+            {/* Success */}
+            {formSubmitted && !error && !localError && (
+              <div className="mb-4 p-4 bg-green-50 border-l-4 border-green-400 text-green-700 rounded-r-lg">
+                <span className="font-medium">Patient registered successfully! Ready for the next one.</span>
+              </div>
+            )}
+            <form
+              onSubmit={handleSubmit}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-8 space-y-5"
+            >
+              {/* Full Name */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Full Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                  disabled={isLoading || formSubmitted}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                  placeholder="Patient's full name"
+                />
+              </div>
+              {/* Gender */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Gender</label>
+                <select
+                  name="sex"
+                  value={formData.sex}
+                  onChange={handleChange}
+                  disabled={isLoading || formSubmitted}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                >
+                  <option value="">Select gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
+              {/* DOB */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Date of Birth <span className="text-xs font-normal text-gray-400">(YYYY-MM-DD)</span>
+                </label>
+                <input
+                  type="text"
+                  name="dob"
+                  value={formData.dob}
+                  onChange={handleChange}
+                  disabled={isLoading || formSubmitted}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                  placeholder="e.g. 1990-05-20"
+                />
+              </div>
+              {/* Mobile */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mobile Number</label>
+                <input
+                  type="text"
+                  name="mobileNumber"
+                  value={formData.mobileNumber}
+                  onChange={handleChange}
+                  disabled={isLoading || formSubmitted}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                  placeholder="Mobile number"
+                />
+              </div>
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Notes</label>
+                <textarea
+                  name="note"
+                  value={formData.note}
+                  onChange={handleChange}
+                  rows={3}
+                  disabled={isLoading || formSubmitted}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white disabled:opacity-70"
+                  placeholder="Any additional notes about the patient..."
+                />
+              </div>
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isLoading || formSubmitted || !formData.name.trim()}
+                className="w-full py-3 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors"
+              >
+                {isLoading || formSubmitted ? 'Registering…' : 'Register Patient'}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Mode Toggle — hidden for reception */}
+        {!isReception && (
+          <>
         <div className="max-w-3xl mx-auto mb-8 flex justify-center">
           <div className="inline-flex bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
             <button
@@ -869,7 +975,10 @@ export default function PatientForm() {
         </div>
           </>
         )}
+          </>
+        )}
       </div>
+
     </div>
   );
 }
