@@ -277,7 +277,10 @@ export default function InvestigationModal({ patient, visit, onClose }: Props) {
 
     for (const entry of entries) {
       try {
-        const compressed = await compressToWebP(entry.file);
+        const webp = await compressToWebP(entry.file);
+        // Only use WebP if it's actually smaller — some already-compressed JPEGs
+        // can bloat when re-encoded, resulting in a negative savings ratio.
+        const compressed = webp.size < entry.file.size ? webp : new Blob([await entry.file.arrayBuffer()], { type: entry.file.type });
         updateImg(entry.id, { compressed, status: 'idle' });
       } catch {
         updateImg(entry.id, { status: 'error', error: 'Compression failed' });
@@ -385,15 +388,23 @@ export default function InvestigationModal({ patient, visit, onClose }: Props) {
       </div>
     );
     // idle — ready
-    if (img.status === 'idle' && img.compressed) return (
-      <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1.5 py-1">
-        <div className="flex items-center gap-1">
-          <span className="text-[8px] text-gray-300 line-through">{fmtBytes(img.file.size)}</span>
-          <span className="text-[8px] text-green-300 font-bold">→ {fmtBytes(img.compressed.size)}</span>
-          <span className="ml-auto text-[8px] text-emerald-400 font-black">-{Math.round((1 - img.compressed.size / img.file.size) * 100)}%</span>
+    if (img.status === 'idle' && img.compressed) {
+      const saved = img.file.size - img.compressed.size;
+      const alreadyOptimal = saved <= 0;
+      return (
+        <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1.5 py-1">
+          {alreadyOptimal ? (
+            <span className="text-[8px] text-sky-300 font-bold">✓ Already optimized</span>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span className="text-[8px] text-gray-300 line-through">{fmtBytes(img.file.size)}</span>
+              <span className="text-[8px] text-green-300 font-bold">→ {fmtBytes(img.compressed.size)}</span>
+              <span className="ml-auto text-[8px] text-emerald-400 font-black">-{Math.round((saved / img.file.size) * 100)}%</span>
+            </div>
+          )}
         </div>
-      </div>
-    );
+      );
+    }
     return null;
   };
 
