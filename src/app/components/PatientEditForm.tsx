@@ -212,8 +212,8 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
           }
           
           .print-container {
-            width: 210mm; /* A5 landscape width */
-            height: 148mm; /* A5 landscape height */
+            width: 148mm; /* A5 portrait width */
+            height: 210mm; /* A5 portrait height */
             position: relative;
             border: none;
             display: flex;
@@ -240,61 +240,21 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
           }
           
           /* Patient info container - positioned at top left */
-          .patient-info {
-            position: absolute;
-            top: 148px;
-            left: 20px;
-            width: 45%;
-            padding: 10px;
-            box-sizing: border-box;
-          }
-
           /* Treatment data container - positioned at middle left */
           .treatment-data {
             position: absolute;
-            top: 205px;
+            top: 295px;  /* Shifted down to be fully under the Rx: label */
             left: 20px;
-            width: 45%;
+            width: 90%;
             padding: 10px;
             box-sizing: border-box;
           }
           
-          /* Name field */
-          .name-row {
-            margin-bottom: 8px;
-            display: flex;
-          }
-          .name-label {
-            font-size: 10px;
-            font-weight: bold;
-            margin-right: 6px;
-            min-width: 40px;
-          }
-          .name-value {
-            font-size: 10px;
-          }
-          
-          /* Age and clinic ID row */
-          .details-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 4px;
-          }
-          .age-container {
-            display: flex;
-          }
-          .age-label {
-            font-size: 10px;
-            font-weight: bold;
-            margin-right: 6px;
-            min-width: 40px;
-          }
-          .age-value {
-            font-size: 10px;
-          }
           .clinic-container {
+            position: absolute;
+            top: 165px;  /* Shifted down next to green subtitle M.B.Ch.B */
+            right: 30px;
             display: flex;
-            margin-right: 0;
           }
           .clinic-id-label {
             font-size: 10px;
@@ -303,13 +263,43 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
           }
           .clinic-id-value {
             font-size: 10px;
+            font-weight: bold;
+          }
+
+          .name-arabic-container {
+            position: absolute;
+            top: 232px;  /* Align perfectly on the dotted line of اسم المريض */
+            right: 110px; /* Shifted left to prevent overlap with اسم المريض label */
+            width: 40%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: left; /* Left aligned to grow leftward naturally and prevent overlap */
+            font-size: 10px;
+            font-weight: bold;
           }
           
-          /* Separator line */
-          .separator {
-            border-bottom: 1px dashed #000;
-            margin-bottom: 8px;
-            width: 100%;
+          .age-arabic-container {
+            position: absolute;
+            top: 270px;  /* Align perfectly on the العمر dotted line */
+            right: 80px; /* Kept at 80px because it was perfect */
+            width: 30%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: right; /* Right aligned next to العمر label */
+            font-size: 10px;
+            font-weight: bold;
+          }
+
+          .date-container {
+            position: absolute;
+            top: 232px;  /* Align perfectly on the dotted line of التاريخ */
+            left: 55px;  /* Shifted slightly to the right to align perfectly above the dotted line */
+            width: 150px;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: left; /* Left aligned to print directly on the dotted line */
+            font-size: 10px;
+            font-weight: bold;
           }
           
           /* Content */
@@ -324,15 +314,15 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
           
           @media print {
             @page {
-              size: A5 landscape;
+              size: A5 portrait;
               margin: 0 !important;
               padding: 0 !important;
               border: none !important;
             }
             
             html, body {
-              width: 210mm;
-              height: 148mm;
+              width: 148mm;
+              height: 210mm;
               margin: 0 !important;
               padding: 0 !important;
               overflow: hidden;
@@ -360,18 +350,41 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
               print-color-adjust: exact !important;
             }
             
-            .patient-info {
+            .name-arabic-container {
               position: absolute !important;
-              top: 148px !important;
-              left: 20px !important;
-              width: 45% !important;
+              top: 232px !important;
+              right: 110px !important;
+              width: 40% !important;
+              text-align: left !important;
             }
-            
+
+            .age-arabic-container {
+              position: absolute !important;
+              top: 270px !important;
+              right: 80px !important;
+              width: 30% !important;
+              text-align: right !important;
+            }
+
+            .date-container {
+              position: absolute !important;
+              top: 232px !important;
+              left: 55px !important;
+              width: 150px !important;
+              text-align: left !important;
+            }
+
+            .clinic-container {
+              position: absolute !important;
+              top: 165px !important;
+              right: 30px !important;
+            }
+
             .treatment-data {
               position: absolute !important;
-              top: 205px !important;
+              top: 295px !important;
               left: 20px !important;
-              width: 45% !important;
+              width: 90% !important;
             }
             
             .print-button {
@@ -396,27 +409,22 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
         <div class="print-container">
           <img src="/drhawar.jpg" class="report-image" />
           
-          <div class="patient-info">
-            <div class="name-row">
-              <div class="name-label">Name:</div>
-              <div class="name-value">${patient.name}</div>
-            </div>
-            
-            <div class="details-row">
-              <div class="age-container">
-                <div class="age-label">Age:</div>
-                <div class="age-value">${ageDisplay} / DOB: ${patient.dob || 'N/A'}</div>
-              </div>
-              
-              <div class="clinic-container">
-                <div class="clinic-id-label">clinic ID:</div>
-                <div class="clinic-id-value">${patient.clinicId}</div>
-              </div>
-            </div>
-          </div>
+          <!-- Name next to اسم المريض: -->
+          <div class="name-arabic-container">${patient.name}</div>
           
+          <!-- Age next to العمر: -->
+          <div class="age-arabic-container">${ageDisplay}</div>
+
+          <!-- Today's date next to التاريخ: -->
+          <div class="date-container">${new Date().toISOString().split('T')[0]}</div>
+
+          <!-- Clinic ID next to green text -->
+          <div class="clinic-container">
+            <div class="clinic-id-label">clinic ID:</div>
+            <div class="clinic-id-value">${patient.clinicId}</div>
+          </div>
+
           <div class="treatment-data">
-            <div class="separator"></div>
             <div class="treatment-content">${content}</div>
           </div>
         </div>
@@ -424,17 +432,17 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
         <button class="print-button" onclick="window.print();return false;">Print</button>
         <script>
           window.onload = function() {
-            document.documentElement.style.width = '210mm';
-            document.documentElement.style.height = '148mm';
-            document.body.style.width = '210mm';
-            document.body.style.height = '148mm';
+            document.documentElement.style.width = '148mm';
+            document.documentElement.style.height = '210mm';
+            document.body.style.width = '148mm';
+            document.body.style.height = '210mm';
             document.body.style.margin = '0';
             document.body.style.padding = '0';
             document.body.style.border = 'none';
             document.body.style.overflow = 'hidden';
             
             const style = document.createElement('style');
-            style.textContent = "@media print { @page { margin: 0 !important; } body { margin: 0 !important; } }";
+            style.textContent = "@media print { @page { size: A5 portrait; margin: 0 !important; } body { margin: 0 !important; } }";
             document.head.appendChild(style);
             
             setTimeout(function() {

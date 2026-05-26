@@ -119,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Login function
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     // For admin/root credentials, use simple authentication
-    if (email === 'admin' && password === 'root') {
+    if ((email === 'admin' && password === 'root')) {
       setIsAdminAuth(true);
       setUserId(ADMIN_USER_ID);
       localStorage.setItem('adminAuth', 'true');
