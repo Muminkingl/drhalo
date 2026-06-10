@@ -63,13 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsLoading(false);
           return;
         }
-        
+
         // Otherwise check Supabase session
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
           console.error('Error fetching session:', error);
         }
-        
+
         if (session?.user) {
           setSession(session);
           setUserId(session.user.id);
@@ -119,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Login function
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     // For admin/root credentials, use simple authentication
-    if ((email === 'admin' && password === 'root')) {
+    if ((email === 'adminacc123321098' && password === 'root121232321990@')) {
       setIsAdminAuth(true);
       setUserId(ADMIN_USER_ID);
       localStorage.setItem('adminAuth', 'true');
@@ -127,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // For staff credentials, use simple local authentication with restrictions
-    if (email === 'staff' && password === 'staff365') {
+    if (email === 'staff365' && password === 'staff1233284783772') {
       setIsStaffAuth(true);
       // Use sentinel so queries work consistently (view/edit allowed for now)
       setUserId(ADMIN_USER_ID);
@@ -142,20 +142,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('receptionAuth', 'true');
       return { success: true };
     }
-    
+
     // For other credentials, use Supabase authentication
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      
+
       if (error) throw error;
-      
+
       if (data.user) {
         setUserId(data.user.id);
       }
-      
+
       return { success: true };
     } catch (error) {
       console.error('Error during login:', error);
@@ -186,10 +186,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsReceptionAuth(false);
         setUserId(null);
       }
-      
+
       // Also sign out from Supabase (won't hurt even if not signed in)
       await supabase.auth.signOut();
-      
+
       router.push('/login');
     } catch (error) {
       console.error('Error during logout:', error);
@@ -197,11 +197,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      session, 
-      isAuthenticated: !!session || isAdminAuth || isStaffAuth || isReceptionAuth, 
+    <AuthContext.Provider value={{
+      session,
+      isAuthenticated: !!session || isAdminAuth || isStaffAuth || isReceptionAuth,
       isLoading,
-      login, 
+      login,
       logout,
       userId: userId,
       isStaffAuth,
