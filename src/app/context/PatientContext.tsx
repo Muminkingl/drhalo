@@ -51,6 +51,19 @@ export interface Visit {
   investigations?: Array<{ id: string; imageUrl: string; fileName: string; uploadedAt: string }>;
 }
 
+// Define the Appointment interface
+export interface Appointment {
+  id: string;
+  patientName: string;
+  phoneNumber: string;
+  appointmentDate: string;
+  appointmentTime: string;
+  notes: string;
+  status: 'Scheduled' | 'Arrived' | 'Completed' | 'Cancelled';
+  createdAt: string;
+  userId: string;
+}
+
 // Define the database record shape
 interface PatientRecord {
   id: string;
@@ -78,6 +91,7 @@ interface PatientRecord {
 
 interface PatientContextType {
   patients: Patient[];
+  appointments: Appointment[];
   isLoading: boolean;
   error: string | null;
   addPatient: (patient: Omit<Patient, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
@@ -88,16 +102,21 @@ interface PatientContextType {
   addVisit: (patientId: string, visitData: Partial<Patient>) => Promise<void>;
   editVisit: (visitId: string, visitData: Partial<Visit>) => Promise<void>;
   getPatientVisits: (patientId: string) => Promise<Visit[]>;
+  addAppointment: (appointment: Omit<Appointment, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  editAppointment: (id: string, appointment: Partial<Omit<Appointment, 'id' | 'createdAt' | 'userId'>>) => Promise<void>;
+  deleteAppointment: (id: string) => Promise<void>;
+  refreshAppointments: () => Promise<void>;
 }
 
 const PatientContext = createContext<PatientContextType | undefined>(undefined);
 
 export function PatientProvider({ children }: { children: React.ReactNode }) {
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tableChecked, setTableChecked] = useState(false);
-  const { session, isAuthenticated, userId, isStaffAuth } = useAuth();
+  const { session, isAuthenticated, userId, isStaffAuth, isReceptionAuth } = useAuth();
 
   // Check if the patients table exists
   useEffect(() => {
@@ -185,12 +204,65 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Refresh patients when auth state changes
+  // Load appointments data
+  const fetchAppointments = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (!isAuthenticated || !userId) {
+        setAppointments([]);
+        return;
+      }
+
+      let query = supabase
+        .from('appointments')
+        .select('*')
+        .order('appointment_date', { ascending: true })
+        .order('appointment_time', { ascending: true });
+
+      if (userId !== '00000000-0000-0000-0000-000000000000') {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Supabase error fetching appointments:', error);
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      if (data) {
+        const formattedAppointments = data.map((a: any) => ({
+          id: a.id,
+          patientName: a.patient_name,
+          phoneNumber: a.phone_number,
+          appointmentDate: a.appointment_date,
+          appointmentTime: a.appointment_time,
+          notes: a.notes || '',
+          status: a.status as 'Scheduled' | 'Arrived' | 'Completed' | 'Cancelled',
+          createdAt: a.created_at,
+          userId: a.user_id
+        }));
+
+        setAppointments(formattedAppointments);
+      }
+    } catch (err) {
+      console.error('Error fetching appointments:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load appointments');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Refresh patients and appointments when auth state changes
   useEffect(() => {
     if (tableChecked && isAuthenticated && userId) {
       fetchPatients();
+      fetchAppointments();
     } else {
       setPatients([]);
+      setAppointments([]);
     }
   }, [isAuthenticated, userId, tableChecked]);
 
@@ -204,8 +276,8 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Not authenticated');
       }
 
-      // For staff: ignore restricted fields on create (server-side guard)
-      const sanitizedData = isStaffAuth ? {
+      // For staff/reception: ignore restricted fields on create (server-side guard)
+      const sanitizedData = (isStaffAuth || isReceptionAuth) ? {
         ...patientData,
         diagnosis: '',
         treatment: '',
@@ -366,8 +438,8 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Not authenticated');
       }
 
-      // Disallow editing for staff role
-      if (isStaffAuth) {
+      // Disallow editing for staff/reception role
+      if (isStaffAuth || isReceptionAuth) {
         const msg = "You don’t have permission to edit patient data.";
         setError(msg);
         throw new Error(msg);
@@ -604,9 +676,141 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const addAppointment = async (apptData: Omit<Appointment, 'id' | 'createdAt' | 'userId'>) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (!isAuthenticated || !userId) {
+        throw new Error('Not authenticated');
+      }
+
+      const { data, error } = await supabase
+        .from('appointments')
+        .insert({
+          patient_name: apptData.patientName,
+          phone_number: apptData.phoneNumber,
+          appointment_date: apptData.appointmentDate,
+          appointment_time: apptData.appointmentTime,
+          notes: apptData.notes || '',
+          status: apptData.status || 'Scheduled',
+          user_id: userId
+        })
+        .select();
+
+      if (error) {
+        console.error('Supabase error adding appointment:', error);
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      if (data && data[0]) {
+        const newAppt: Appointment = {
+          id: data[0].id,
+          patientName: data[0].patient_name,
+          phoneNumber: data[0].phone_number,
+          appointmentDate: data[0].appointment_date,
+          appointmentTime: data[0].appointment_time,
+          notes: data[0].notes || '',
+          status: data[0].status as 'Scheduled' | 'Arrived' | 'Completed' | 'Cancelled',
+          createdAt: data[0].created_at,
+          userId: data[0].user_id
+        };
+
+        setAppointments(prev => [...prev, newAppt].sort((a, b) => 
+          a.appointmentDate.localeCompare(b.appointmentDate) || a.appointmentTime.localeCompare(b.appointmentTime)
+        ));
+      }
+    } catch (err) {
+      console.error('Error adding appointment:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add appointment');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const editAppointment = async (id: string, apptData: Partial<Omit<Appointment, 'id' | 'createdAt' | 'userId'>>) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (!isAuthenticated || !userId) {
+        throw new Error('Not authenticated');
+      }
+
+      const dbData: any = {};
+      if (apptData.patientName !== undefined) dbData.patient_name = apptData.patientName;
+      if (apptData.phoneNumber !== undefined) dbData.phone_number = apptData.phoneNumber;
+      if (apptData.appointmentDate !== undefined) dbData.appointment_date = apptData.appointmentDate;
+      if (apptData.appointmentTime !== undefined) dbData.appointment_time = apptData.appointmentTime;
+      if (apptData.notes !== undefined) dbData.notes = apptData.notes;
+      if (apptData.status !== undefined) dbData.status = apptData.status;
+
+      const { error } = await supabase
+        .from('appointments')
+        .update(dbData)
+        .eq('id', id);
+
+      if (error) {
+        console.error('Supabase error editing appointment:', error);
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      setAppointments(prev => prev.map(app => 
+        app.id === id ? { ...app, ...apptData } : app
+      ).sort((a, b) => 
+        a.appointmentDate.localeCompare(b.appointmentDate) || a.appointmentTime.localeCompare(b.appointmentTime)
+      ));
+    } catch (err) {
+      console.error('Error editing appointment:', err);
+      setError(err instanceof Error ? err.message : 'Failed to edit appointment');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteAppointment = async (id: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (!isAuthenticated || !userId) {
+        throw new Error('Not authenticated');
+      }
+
+      if (isStaffAuth || isReceptionAuth) {
+        throw new Error("You don't have permission to delete appointments.");
+      }
+
+      const { error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Supabase error deleting appointment:', error);
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      setAppointments(prev => prev.filter(app => app.id !== id));
+    } catch (err) {
+      console.error('Error deleting appointment:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete appointment');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshAppointments = async () => {
+    await fetchAppointments();
+  };
+
   return (
     <PatientContext.Provider value={{
       patients,
+      appointments,
       isLoading,
       error,
       addPatient,
@@ -616,7 +820,11 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
       refreshPatients,
       addVisit,
       editVisit,
-      getPatientVisits
+      getPatientVisits,
+      addAppointment,
+      editAppointment,
+      deleteAppointment,
+      refreshAppointments
     }}>
       {children}
     </PatientContext.Provider>

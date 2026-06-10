@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { usePatients, Patient } from '../../context/PatientContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 
-export default function PatientForm() {
-  const { addPatient, addVisit, patients, isLoading, error } = usePatients();
+function PatientFormContent() {
+  const { addPatient, addVisit, patients, isLoading, error, editAppointment } = usePatients();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isStaffAuth, isReceptionAuth } = useAuth();
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [prefilledAppointmentId, setPrefilledAppointmentId] = useState<string | null>(null);
 
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,6 +43,24 @@ export default function PatientForm() {
     followUpDate: '',
     // clinicId is not included here as it's auto-generated
   });
+
+  useEffect(() => {
+    const name = searchParams.get('name');
+    const phone = searchParams.get('phone');
+    const apptId = searchParams.get('appointmentId');
+    if (name || phone || apptId) {
+      setFormData(prev => ({
+        ...prev,
+        name: name || '',
+        mobileNumber: phone || ''
+      }));
+      if (apptId) {
+        setPrefilledAppointmentId(apptId);
+      }
+      // Clear query params so reloading doesn't re-trigger prefill
+      router.replace('/dashboard/patient-form', { scroll: false });
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -161,6 +181,11 @@ export default function PatientForm() {
         await addPatient({ ...formData, clinicId: '' });
       }
 
+      // If we have a prefilled appointment, update its status to Completed
+      if (prefilledAppointmentId && editAppointment) {
+        await editAppointment(prefilledAppointmentId, { status: 'Completed' });
+      }
+
       // Reset form after submission
       setTimeout(() => {
         setFormData({
@@ -188,6 +213,7 @@ export default function PatientForm() {
         setSelectedPatient(null);
         setMode('new');
         setSearchQuery('');
+        setPrefilledAppointmentId(null);
         setCurrentStep(1); // Reset to first step for next registration
       }, 1500);
     } catch (err) {
@@ -220,6 +246,28 @@ export default function PatientForm() {
             {isReception ? 'Fill in the basic patient details' : 'Enter patient information below'}
           </p>
         </div>
+
+        {/* Prefilled Appointment Banner (Reception Mode) */}
+        {prefilledAppointmentId && isReception && (
+          <div className="max-w-lg mx-auto mb-6">
+            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border-l-4 border-indigo-500 text-indigo-700 dark:text-indigo-300 rounded-r-lg shadow-sm flex justify-between items-center">
+              <div>
+                <span className="font-semibold text-sm block">Prefilled from Active Appointment</span>
+                <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">Patient details pre-loaded. Registering will automatically mark the appointment as Completed.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPrefilledAppointmentId(null);
+                  setFormData(prev => ({ ...prev, name: '', mobileNumber: '' }));
+                }}
+                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-gray-700 px-2.5 py-1.5 rounded-lg shadow-xs transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── RECEPTION: Simplified single-step form ─────────────────────── */}
         {isReception && (
@@ -549,6 +597,28 @@ export default function PatientForm() {
             ))}
           </div>
         </div>
+
+        {/* Prefilled Appointment Banner (Standard Mode) */}
+        {prefilledAppointmentId && !isReception && (
+          <div className="mb-6 max-w-3xl mx-auto">
+            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border-l-4 border-indigo-500 text-indigo-700 dark:text-indigo-300 rounded-r-lg shadow-sm flex justify-between items-center">
+              <div>
+                <span className="font-semibold text-sm block">Prefilled from Active Appointment</span>
+                <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">Patient details pre-loaded. Registering will automatically mark the appointment as Completed.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPrefilledAppointmentId(null);
+                  setFormData(prev => ({ ...prev, name: '', mobileNumber: '' }));
+                }}
+                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-gray-700 px-2.5 py-1.5 rounded-lg shadow-xs transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Error Message */}
         {(localError || error) && (
@@ -1073,5 +1143,23 @@ export default function PatientForm() {
       </div>
 
     </div>
+  );
+}
+
+export default function PatientForm() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8 flex justify-center items-center">
+        <div className="text-center">
+          <svg className="animate-spin h-10 w-10 text-indigo-600 dark:text-indigo-400 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <p className="text-gray-700 dark:text-gray-300">Loading Patient Registration form...</p>
+        </div>
+      </div>
+    }>
+      <PatientFormContent />
+    </Suspense>
   );
 }

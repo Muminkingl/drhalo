@@ -29,6 +29,16 @@ const navigationItems = [
     description: 'Add New Patient'
   },
   { 
+    name: 'Appointments Schedule', 
+    href: '/dashboard/schedule', 
+    icon: (
+      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+    description: 'Manage Appointments'
+  },
+  { 
     name: 'Patient Directory', 
     href: '/dashboard/patients', 
     icon: (
@@ -224,8 +234,8 @@ export default function DashboardLayout({
           <nav className="flex-1 px-4 py-6 overflow-y-auto overflow-x-hidden scrollbar-hide">
             <ul className="space-y-2">
               {navigationItems.filter(item => {
-                if (isReceptionAuth) {
-                  return item.name === 'Dashboard' || item.name === 'Patient Registration';
+                if (isStaffAuth || isReceptionAuth) {
+                  return item.name === 'Patient Registration' || item.name === 'Appointments Schedule';
                 }
                 return true;
               }).map((item) => (

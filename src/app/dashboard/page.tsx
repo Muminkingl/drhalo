@@ -1,13 +1,77 @@
 "use client";
 
-import { usePatients } from '../context/PatientContext';
+import { useState, useMemo, useEffect } from 'react';
+import { usePatients, Appointment } from '../context/PatientContext';
 import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
+import { useRouter } from 'next/navigation';
 import SupabaseSetupGuide from '../components/SupabaseSetupGuide';
 
 export default function Dashboard() {
-  const { patients } = usePatients();
-  const { isReceptionAuth } = useAuth();
+  const { patients, appointments, editAppointment } = usePatients();
+  const { isStaffAuth, isReceptionAuth } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isStaffAuth || isReceptionAuth) {
+      router.push('/dashboard/schedule');
+    }
+  }, [isStaffAuth, isReceptionAuth, router]);
+  
+  // Dashboard appointments search & status filter
+  const [appointmentSearch, setAppointmentSearch] = useState('');
+  const [appointmentStatusFilter, setAppointmentStatusFilter] = useState('all');
+
+  const getTodayString = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const todayStr = getTodayString();
+
+  // Find a registered patient by name or phone
+  const findMatchingPatient = (name: string, phone: string) => {
+    if (!name && !phone) return null;
+    return patients.find(p => 
+      p.name.trim().toLowerCase() === name.trim().toLowerCase() ||
+      (p.mobileNumber && p.mobileNumber.trim() === phone.trim())
+    );
+  };
+
+  // Filter appointments for today
+  const filteredTodayAppts = useMemo(() => {
+    return (appointments || []).filter(app => {
+      const isToday = app.appointmentDate === todayStr;
+      if (!isToday) return false;
+
+      const matchesSearch = appointmentSearch.trim() === '' ||
+        app.patientName.toLowerCase().includes(appointmentSearch.toLowerCase()) ||
+        app.phoneNumber.includes(appointmentSearch);
+
+      const matchesStatus = appointmentStatusFilter === 'all' || app.status === appointmentStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [appointments, todayStr, appointmentSearch, appointmentStatusFilter]);
+
+  // Filter upcoming appointments
+  const filteredUpcomingAppts = useMemo(() => {
+    return (appointments || []).filter(app => {
+      const isUpcoming = app.appointmentDate > todayStr;
+      if (!isUpcoming) return false;
+
+      const matchesSearch = appointmentSearch.trim() === '' ||
+        app.patientName.toLowerCase().includes(appointmentSearch.toLowerCase()) ||
+        app.phoneNumber.includes(appointmentSearch);
+
+      const matchesStatus = appointmentStatusFilter === 'all' || app.status === appointmentStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [appointments, todayStr, appointmentSearch, appointmentStatusFilter]);
 
   // Calculate age from DOB
   const calculateAge = (dob: string): number => {
@@ -233,6 +297,172 @@ export default function Dashboard() {
         </div>
         )}
       </div>
+
+      {/* Clinic Appointments Tracker (Doctor Dashboard) */}
+      {!isReceptionAuth && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mt-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-gray-100 dark:border-gray-700 pb-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Clinic Appointments Tracker</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Track today's queue and upcoming patient visits.</p>
+            </div>
+            
+            {/* Search and Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search name or phone..."
+                  value={appointmentSearch}
+                  onChange={(e) => setAppointmentSearch(e.target.value)}
+                  className="pl-8 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <svg className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              
+              <select
+                value={appointmentStatusFilter}
+                onChange={(e) => setAppointmentStatusFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold"
+              >
+                <option value="all">All Statuses</option>
+                <option value="Scheduled">Scheduled</option>
+                <option value="Arrived">Arrived</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Column 1: Today's Appointments */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Today's Appointments ({filteredTodayAppts.length})</span>
+                <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold">{todayStr}</span>
+              </div>
+              
+              {filteredTodayAppts.length === 0 ? (
+                <div className="p-8 text-center bg-gray-50 dark:bg-gray-800/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 italic">No appointments for today matching filters.</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                  {filteredTodayAppts.map(app => {
+                    const matchedPatient = findMatchingPatient(app.patientName, app.phoneNumber);
+                    return (
+                      <div key={app.id} className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700/50 flex items-center justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                            app.status === 'Arrived' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 animate-pulse' :
+                            app.status === 'Completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+                            app.status === 'Cancelled' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                            'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                          }`}>
+                            {app.appointmentTime}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900 dark:text-white">{app.patientName}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                app.status === 'Arrived' ? 'bg-amber-100 text-amber-700' :
+                                app.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                app.status === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                                'bg-blue-100 text-blue-700'
+                              }`}>{app.status}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">📞 {app.phoneNumber}</p>
+                            {app.notes && <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 italic">&quot;{app.notes}&quot;</p>}
+                          </div>
+                        </div>
+
+                        {/* Integration lookup & Status Updates */}
+                        <div className="flex flex-col items-end gap-2">
+                          {matchedPatient ? (
+                            <Link
+                              href={`/dashboard/patients?search=${encodeURIComponent(matchedPatient.name)}`}
+                              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 dark:text-indigo-300 text-xs font-semibold rounded-lg transition-colors border border-indigo-100 dark:border-indigo-800"
+                            >
+                              View File
+                            </Link>
+                          ) : (
+                            <span className="px-2.5 py-1.5 bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 text-[10px] font-semibold rounded-lg border border-gray-200 dark:border-gray-700">
+                              Not Registered
+                            </span>
+                          )}
+                          
+                          {/* Doctor Quick Actions */}
+                          {app.status === 'Arrived' && editAppointment && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await editAppointment(app.id, { status: 'Completed' });
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-semibold rounded shadow-xs"
+                            >
+                              Seen
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Column 2: Upcoming Appointments */}
+            <div>
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-4">Upcoming Appointments ({filteredUpcomingAppts.length})</span>
+              
+              {filteredUpcomingAppts.length === 0 ? (
+                <div className="p-8 text-center bg-gray-50 dark:bg-gray-800/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 italic">No upcoming appointments matching filters.</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                  {filteredUpcomingAppts.map(app => {
+                    const matchedPatient = findMatchingPatient(app.patientName, app.phoneNumber);
+                    return (
+                      <div key={app.id} className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700/50 flex items-center justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <div className="h-8 w-8 bg-indigo-50 dark:bg-indigo-900/10 text-indigo-600 dark:text-indigo-400 rounded-lg flex flex-col items-center justify-center font-bold p-1 leading-none text-center">
+                            <span className="text-[10px]">{app.appointmentDate.split('-')[2]}</span>
+                            <span className="text-[8px] uppercase">{new Date(app.appointmentDate).toLocaleString('en-US', { month: 'short' })}</span>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900 dark:text-white">{app.patientName}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">@{app.appointmentTime}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Status: {app.status}</p>
+                          </div>
+                        </div>
+
+                        {matchedPatient ? (
+                          <Link
+                            href={`/dashboard/patients?search=${encodeURIComponent(matchedPatient.name)}`}
+                            className="px-2 py-1 text-indigo-600 hover:text-indigo-800 text-xs font-semibold"
+                          >
+                            View File
+                          </Link>
+                        ) : (
+                          <span className="text-gray-400 text-[10px] italic">Not Registered</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 } 
