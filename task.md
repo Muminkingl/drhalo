@@ -1,113 +1,127 @@
-## New Feature Request: Appointment Scheduling System for Staff & Admin
+## Printing System Bug Fix Request
 
-Please review the existing codebase and fully understand the current architecture before making any changes.
+Please investigate and fix the printing functionality across the application.
 
-### Current Situation
+### Issue Summary
 
-We currently have two user roles:
+The printed text content is positioned correctly and the printer successfully prints the document. However, there is a critical issue with the printing layout.
 
-1. **Admin (Doctor)**
-2. **Staff**
+Currently, when the user clicks the **Print** button:
 
-At the moment, staff users can only access:
+* The patient/prescription text data prints correctly.
+* The system is also attempting to print the image:
 
-`/dashboard/patient-form`
+`/public/drhawar.jpg`
 
-This form is currently being used for both actual patient registrations and appointment tracking, which is not ideal.
-
----
-
-## Required Changes
-
-### 1. Create a New Route
-
-Add a new route:
-
-`/dashboard/schedule`
-
-This page will be used by staff members to manage patient appointments before the patient actually arrives at the clinic.
+This image should **NOT** be included in the print output.
 
 ---
 
-### 2. Staff Appointment Workflow
+## Current Problem
 
-Example:
+### Scenario 1: A4 Paper
 
-A patient calls the clinic and says:
+When an A4 paper is loaded into the printer:
 
-> "I will come to the clinic at 10:00 PM."
+* The text prints correctly.
+* The image (`drhawar.jpg`) is also printed.
+* This is unnecessary and wastes paper space.
 
-The staff should **NOT** create a patient record immediately in `/dashboard/patient-form`.
+### Scenario 2: A5 Paper (Actual Clinic Paper)
 
-Instead, they should create an appointment in:
+When the clinic's physical A5 paper is used:
 
-`/dashboard/schedule`
-
-The appointment should contain information such as:
-
-* Patient Name
-* Phone Number
-* Appointment Date
-* Appointment Time
-* Notes (optional)
-* Appointment Status
-
-Suggested statuses:
-
-* Scheduled
-* Arrived
-* Completed
-* Cancelled
+* The text layout is correct.
+* The printer attempts to print both the text and the image.
+* The image causes the print layout to overflow, misalign, or completely break.
+* The final printed result becomes unusable.
 
 ---
 
-### 3. Patient Registration Workflow
+## Required Fix
 
-When the patient physically arrives at the clinic:
+The print output should contain:
 
-* Staff opens the appointment.
-* Staff marks the appointment as "Arrived".
-* Staff then creates the actual patient record in `/dashboard/patient-form`.
+✅ Patient information
 
-In other words:
+✅ Prescription data
 
-**Schedule = Future appointments**
+✅ Notes
 
-**Patient Form = Patients who have actually arrived and are being registered**
+✅ Diagnosis
+
+✅ Any required text content
 
 ---
 
-### 4. Admin / Doctor Dashboard
+The print output should NOT contain:
 
-The Admin (Doctor) should have access to all scheduled appointments.
+❌ `/public/drhawar.jpg`
+
+❌ Any background images
+
+❌ Any decorative images
+
+❌ Any unnecessary branding images that affect printing
+
+---
+
+## Technical Investigation Required
+
+Please inspect:
+
+* Print styles (`@media print`)
+* Print templates/components
+* Hidden print containers
+* PDF generation logic (if applicable)
+* Any image elements being injected into the print view
+* Any CSS background-image rules
+* Any print-specific layouts
+
+Determine why `drhawar.jpg` is being included in the print output and remove it completely from the print rendering process.
+
+---
+
+## Expected Behavior
+
+When the user clicks **Print**:
+
+1. Generate a clean print layout.
+2. Include only the necessary text content.
+3. Automatically fit within the selected paper size.
+4. Work correctly on both:
+
+   * A5 paper
+   * A4 paper
+5. No image, logo, watermark, or background should be printed unless explicitly required.
+
+---
+
+## Printing Requirements
+
+### A5 Support (Highest Priority)
+
+The clinic primarily uses physical A5 paper.
 
 Requirements:
 
-* Clean and modern UI
-* Easy-to-read appointment list
-* Clear status indicators
-* Search functionality
-* Filter by status
-* Filter by date
-* Upcoming appointments section
-* Today's appointments section
-* Responsive design
+* Content must fit properly on A5.
+* No overflow.
+* No clipping.
+* No extra blank pages.
+* Proper margins.
+* Consistent alignment.
 
-The goal is for the doctor to quickly understand:
+### A4 Compatibility
 
-* Who is coming today
-* Who is scheduled next
-* Who has arrived
-* Who cancelled
+If an A4 printer is used:
 
-The UI should be professional, polished, and optimized for daily clinic usage.
+* Print the same text-only layout.
+* Scale gracefully.
+* Do not add images or backgrounds.
 
 ---
 
-## Important
+## Goal
 
-Do not break the existing patient registration workflow.
-
-The new scheduling system should be added as a separate feature that integrates smoothly with the current system.
-
-Before implementation, analyze the existing codebase structure, routing, authentication, role permissions, and database models to determine the best architecture for this feature.
+The final print output should be a clean, professional, text-only medical document that prints reliably on both A5 and A4 paper sizes, with no dependency on `drhawar.jpg` or any other image assets.

@@ -292,14 +292,7 @@ function PatientsPageContent() {
             }
             
             .report-image {
-              width: 100% !important;
-              height: 100% !important;
-              object-fit: contain !important;
-              object-position: top left !important;
-              image-rendering: -webkit-optimize-contrast !important;
-              image-rendering: crisp-edges !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
+              display: none !important;
             }
             
             .name-arabic-container {

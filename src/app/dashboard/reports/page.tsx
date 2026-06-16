@@ -323,40 +323,33 @@ export default function ReportsPage() {
         
           @media print {
             @page {
-              size: A5 portrait;
+              size: 148mm 210mm;
               margin: 0 !important;
               padding: 0 !important;
               border: none !important;
             }
             
             html, body {
-              width: 148mm;
-              height: 210mm;
+              width: 148mm !important;
+              height: 210mm !important;
               margin: 0 !important;
               padding: 0 !important;
-              overflow: hidden;
-              background: white;
+              overflow: hidden !important;
+              background: white !important;
             }
             
             .print-container {
-              width: 100%;
-              height: 100%;
+              width: 148mm !important;
+              height: 210mm !important;
               margin: 0 !important;
               padding: 0 !important;
-              position: absolute;
-              top: 0;
-              left: 0;
+              position: absolute !important;
+              top: 0 !important;
+              left: 0 !important;
             }
             
             .report-image {
-              width: 100% !important;
-              height: 100% !important;
-              object-fit: contain !important;
-              object-position: top left !important;
-              image-rendering: -webkit-optimize-contrast !important;
-              image-rendering: crisp-edges !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
+              display: none !important;
             }
             
             .name-arabic-container {
