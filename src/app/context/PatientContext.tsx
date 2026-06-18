@@ -56,10 +56,14 @@ export interface Appointment {
   id: string;
   patientName: string;
   phoneNumber: string;
+  gender?: string;
+  age?: string;
   appointmentDate: string;
   appointmentTime: string;
   notes: string;
   status: 'Scheduled' | 'Arrived' | 'Completed' | 'Cancelled';
+  converted?: boolean;
+  convertedPatientId?: string | null;
   createdAt: string;
   userId: string;
 }
@@ -94,7 +98,7 @@ interface PatientContextType {
   appointments: Appointment[];
   isLoading: boolean;
   error: string | null;
-  addPatient: (patient: Omit<Patient, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
+  addPatient: (patient: Omit<Patient, 'id' | 'createdAt' | 'userId'>) => Promise<Patient>;
   editPatient: (id: string, patient: Partial<Omit<Patient, 'id' | 'createdAt' | 'userId'>>) => Promise<void>;
   getPatient: (id: string) => Patient | undefined;
   deletePatient: (id: string) => Promise<void>;
@@ -103,7 +107,7 @@ interface PatientContextType {
   editVisit: (visitId: string, visitData: Partial<Visit>) => Promise<void>;
   getPatientVisits: (patientId: string) => Promise<Visit[]>;
   addAppointment: (appointment: Omit<Appointment, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
-  editAppointment: (id: string, appointment: Partial<Omit<Appointment, 'id' | 'createdAt' | 'userId'>>) => Promise<void>;
+  editAppointment: (id: string, appointment: Partial<Omit<Appointment, 'id' | 'createdAt' | 'userId'>>) => Promise<string | null>;
   deleteAppointment: (id: string) => Promise<void>;
   refreshAppointments: () => Promise<void>;
 }
@@ -237,10 +241,14 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
           id: a.id,
           patientName: a.patient_name,
           phoneNumber: a.phone_number,
+          gender: a.gender || '',
+          age: a.age || '',
           appointmentDate: a.appointment_date,
           appointmentTime: a.appointment_time,
           notes: a.notes || '',
           status: a.status as 'Scheduled' | 'Arrived' | 'Completed' | 'Cancelled',
+          converted: a.converted || false,
+          convertedPatientId: a.converted_patient_id || null,
           createdAt: a.created_at,
           userId: a.user_id
         }));
@@ -267,7 +275,7 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, userId, tableChecked]);
 
   // Add a new patient
-  const addPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'userId'>) => {
+  const addPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'userId'>): Promise<Patient> => {
     try {
       setIsLoading(true);
       setError(null);
@@ -418,7 +426,9 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
           console.error('Error logging initial visit for new patient:', visitErr);
           // Don't throw - we still created the patient successfully
         }
+        return newPatient;
       }
+      throw new Error('Failed to create patient');
     } catch (err) {
       console.error('Error adding patient:', err);
       setError('Failed to add patient');
@@ -690,10 +700,14 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
         .insert({
           patient_name: apptData.patientName,
           phone_number: apptData.phoneNumber,
+          gender: apptData.gender || '',
+          age: apptData.age || '',
           appointment_date: apptData.appointmentDate,
           appointment_time: apptData.appointmentTime,
           notes: apptData.notes || '',
           status: apptData.status || 'Scheduled',
+          converted: false,
+          converted_patient_id: null,
           user_id: userId
         })
         .select();
@@ -708,10 +722,14 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
           id: data[0].id,
           patientName: data[0].patient_name,
           phoneNumber: data[0].phone_number,
+          gender: data[0].gender || '',
+          age: data[0].age || '',
           appointmentDate: data[0].appointment_date,
           appointmentTime: data[0].appointment_time,
           notes: data[0].notes || '',
           status: data[0].status as 'Scheduled' | 'Arrived' | 'Completed' | 'Cancelled',
+          converted: data[0].converted || false,
+          convertedPatientId: data[0].converted_patient_id || null,
           createdAt: data[0].created_at,
           userId: data[0].user_id
         };
@@ -738,13 +756,169 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Not authenticated');
       }
 
+      const currentApp = appointments.find(app => app.id === id);
+      if (!currentApp) {
+        throw new Error('Appointment not found');
+      }
+      let isConvertingToArrived = false;
+      let convertedPatientId = currentApp.convertedPatientId || null;
+      let converted = currentApp.converted || false;
+
+      if (apptData.status === 'Arrived' && currentApp && !currentApp.converted) {
+        isConvertingToArrived = true;
+      }
+
       const dbData: any = {};
       if (apptData.patientName !== undefined) dbData.patient_name = apptData.patientName;
       if (apptData.phoneNumber !== undefined) dbData.phone_number = apptData.phoneNumber;
+      if (apptData.gender !== undefined) dbData.gender = apptData.gender;
+      if (apptData.age !== undefined) dbData.age = apptData.age;
       if (apptData.appointmentDate !== undefined) dbData.appointment_date = apptData.appointmentDate;
       if (apptData.appointmentTime !== undefined) dbData.appointment_time = apptData.appointmentTime;
       if (apptData.notes !== undefined) dbData.notes = apptData.notes;
       if (apptData.status !== undefined) dbData.status = apptData.status;
+      if (apptData.converted !== undefined) {
+        dbData.converted = apptData.converted;
+        converted = apptData.converted;
+      }
+      if (apptData.convertedPatientId !== undefined) {
+        dbData.converted_patient_id = apptData.convertedPatientId;
+        convertedPatientId = apptData.convertedPatientId;
+      }
+
+      if (isConvertingToArrived) {
+        const nameToSearch = currentApp.patientName.trim().toLowerCase();
+        const phoneToSearch = currentApp.phoneNumber.trim();
+
+        const existingPatient = patients.find(p => 
+          p.name.trim().toLowerCase() === nameToSearch &&
+          p.mobileNumber.trim() === phoneToSearch
+        );
+
+        if (existingPatient) {
+          convertedPatientId = existingPatient.id;
+          converted = true;
+
+          try {
+            const visitsTableExists = await ensureVisitsTableExists();
+            if (visitsTableExists) {
+              await supabase.from('visits').insert({
+                patient_id: existingPatient.id,
+                note: currentApp.notes || 'Arrived via appointment',
+                user_id: userId
+              });
+              window.dispatchEvent(new CustomEvent('visitsUpdated'));
+            }
+          } catch (visitErr) {
+            console.error('Error logging visit for existing patient:', visitErr);
+          }
+        } else {
+          // Create new patient
+          const today = new Date();
+          const day = String(today.getDate()).padStart(2, '0');
+          const month = String(today.getMonth() + 1).padStart(2, '0');
+          const year = String(today.getFullYear()).slice(-2);
+          const dateFormat = `${day}${month}${year}`;
+
+          const startOfDay = new Date(today);
+          startOfDay.setHours(0, 0, 0, 0);
+
+          const { data: todaysPatients, error: countError } = await supabase
+            .from('patients')
+            .select('id')
+            .gte('created_at', startOfDay.toISOString());
+
+          if (countError) {
+            console.error('Error counting today\'s patients:', countError);
+            throw new Error(`Database error: ${countError.message}`);
+          }
+
+          const patientCount = (todaysPatients?.length || 0) + 1;
+          const patientCountFormatted = String(patientCount).padStart(2, '0');
+          const clinicId = `${patientCountFormatted}${dateFormat}`;
+
+          const newPatientData = {
+            name: currentApp.patientName,
+            dob: currentApp.age || '',
+            hospital_file_number: '',
+            mobile_number: currentApp.phoneNumber,
+            sex: currentApp.gender || '',
+            age_of_diagnosis: '',
+            diagnosis: '',
+            treatment: '',
+            current_treatment: '',
+            clinic_id: clinicId,
+            note: currentApp.notes || '',
+            table_data: '',
+            history: '',
+            past_medical_history: '',
+            drug_history: '',
+            past_surgical_history: '',
+            examination: '',
+            follow_up_date: '',
+            user_id: userId
+          };
+
+          const { data: insertedPatients, error: insertError } = await supabase
+            .from('patients')
+            .insert(newPatientData)
+            .select();
+
+          if (insertError) {
+            console.error('Supabase error creating patient from appointment:', insertError);
+            throw new Error(`Database error: ${insertError.message}`);
+          }
+
+          if (insertedPatients && insertedPatients[0]) {
+            const p = insertedPatients[0];
+            convertedPatientId = p.id;
+            converted = true;
+
+            const newPatient: Patient = {
+              id: p.id,
+              name: p.name,
+              dob: p.dob || '',
+              hospitalFileNumber: p.hospital_file_number,
+              mobileNumber: p.mobile_number,
+              sex: p.sex,
+              ageOfDiagnosis: p.age_of_diagnosis,
+              diagnosis: p.diagnosis,
+              treatment: p.treatment,
+              currentTreatment: p.current_treatment || '',
+              clinicId: p.clinic_id || '',
+              note: p.note,
+              tableData: p.table_data || '',
+              history: p.history || '',
+              pastMedicalHistory: p.past_medical_history || '',
+              drugHistory: p.drug_history || '',
+              pastSurgicalHistory: p.past_surgical_history || '',
+              examination: p.examination || '',
+              followUpDate: p.follow_up_date || '',
+              createdAt: p.created_at,
+              userId: p.user_id
+            };
+
+            setPatients(prevPatients => [newPatient, ...prevPatients]);
+
+            try {
+              const visitsTableExists = await ensureVisitsTableExists();
+              if (visitsTableExists) {
+                await supabase.from('visits').insert({
+                  patient_id: p.id,
+                  note: currentApp.notes || 'Arrived via appointment',
+                  user_id: userId
+                });
+                window.dispatchEvent(new CustomEvent('visitsUpdated'));
+              }
+            } catch (visitErr) {
+              console.error('Error logging initial visit for new patient:', visitErr);
+            }
+          }
+        }
+
+        dbData.converted = true;
+        dbData.converted_patient_id = convertedPatientId;
+      }
 
       const { error } = await supabase
         .from('appointments')
@@ -756,11 +930,18 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Database error: ${error.message}`);
       }
 
+      const mergedData = {
+        ...apptData,
+        converted: dbData.converted !== undefined ? dbData.converted : converted,
+        convertedPatientId: dbData.converted_patient_id !== undefined ? dbData.converted_patient_id : convertedPatientId
+      };
+
       setAppointments(prev => prev.map(app => 
-        app.id === id ? { ...app, ...apptData } : app
+        app.id === id ? { ...app, ...mergedData } : app
       ).sort((a, b) => 
         a.appointmentDate.localeCompare(b.appointmentDate) || a.appointmentTime.localeCompare(b.appointmentTime)
       ));
+      return convertedPatientId;
     } catch (err) {
       console.error('Error editing appointment:', err);
       setError(err instanceof Error ? err.message : 'Failed to edit appointment');

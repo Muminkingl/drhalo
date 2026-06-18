@@ -1,127 +1,129 @@
-## Printing System Bug Fix Request
+## Schedule & Patient Management Fixes
 
-Please investigate and fix the printing functionality across the application.
-
-### Issue Summary
-
-The printed text content is positioned correctly and the printer successfully prints the document. However, there is a critical issue with the printing layout.
-
-Currently, when the user clicks the **Print** button:
-
-* The patient/prescription text data prints correctly.
-* The system is also attempting to print the image:
-
-`/public/drhawar.jpg`
-
-This image should **NOT** be included in the print output.
+Please review and implement the following improvements.
 
 ---
 
-## Current Problem
+# 1. Add Gender Field to Schedule Appointments
 
-### Scenario 1: A4 Paper
+Route:
 
-When an A4 paper is loaded into the printer:
+`/dashboard/schedule`
 
-* The text prints correctly.
-* The image (`drhawar.jpg`) is also printed.
-* This is unnecessary and wastes paper space.
+When creating a new appointment, add a new required field:
 
-### Scenario 2: A5 Paper (Actual Clinic Paper)
+* Gender
 
-When the clinic's physical A5 paper is used:
+Options:
 
-* The text layout is correct.
-* The printer attempts to print both the text and the image.
-* The image causes the print layout to overflow, misalign, or completely break.
-* The final printed result becomes unusable.
+* Male
+* Female
+
+This information should be stored together with the appointment and remain available throughout the patient workflow.
+
+---
+
+# 2. Automatically Create Patient Record When Appointment Status = Arrived
+
+Current Problem:
+
+When a staff member creates an appointment in:
+
+`/dashboard/schedule`
+
+and later changes the appointment status to:
+
+`Arrived`
+
+the system currently requires the staff member to manually open:
+
+`/dashboard/patients`
+
+or
+
+`/dashboard/patient-form`
+
+and register the patient again.
+
+This creates duplicate work and slows down reception staff.
+
+---
+
+## Required Behavior
+
+When an appointment status is changed to:
+
+`Arrived`
+
+the system should automatically:
+
+1. Create a patient record.
+2. Transfer all available appointment data into the patient record.
+3. Add the patient to `/dashboard/patients`.
+4. Mark the appointment as converted/processed.
+5. Prevent duplicate patient creation.
+
+Data that should transfer automatically:
+
+* Patient Name
+* Phone Number
+* Gender
+* Age
+* Appointment Date
+* Notes
+* Any other relevant fields
+
+The staff should NOT have to register the same patient twice.
+
+---
+
+# 3. Patient Details Panel Missing Age
+
+Route:
+
+`/dashboard/patients`
+
+Current Problem:
+
+When selecting a patient from the patients list, the details panel on the right side displays patient information.
+
+However, the patient's Age is missing.
+
+The age is already collected during patient registration, but it is not displayed in the patient details view.
 
 ---
 
 ## Required Fix
 
-The print output should contain:
+Display the patient's Age in the patient details panel alongside other patient information.
 
-✅ Patient information
+Example:
 
-✅ Prescription data
+* Name
+* Age
+* Gender
+* Phone Number
+* Clinic ID
+* Registration Date
+* Notes
 
-✅ Notes
+Ensure the age is loaded correctly from the database and displayed consistently for all patients.
 
-✅ Diagnosis
+---
+# 4. Allow Editing Patient Information
 
-✅ Any required text content
+Route:
+
+`/dashboard/patients`
+
+Current Problem:
+
+When selecting a patient from the patients list, the details panel on the right side only displays the patient's information.
+
+If the staff accidentally enters the wrong patient name, there is currently no easy way to correct it.
 
 ---
 
-The print output should NOT contain:
+# 4. Filter in `/dashboard/patients`
 
-❌ `/public/drhawar.jpg`
-
-❌ Any background images
-
-❌ Any decorative images
-
-❌ Any unnecessary branding images that affect printing
-
----
-
-## Technical Investigation Required
-
-Please inspect:
-
-* Print styles (`@media print`)
-* Print templates/components
-* Hidden print containers
-* PDF generation logic (if applicable)
-* Any image elements being injected into the print view
-* Any CSS background-image rules
-* Any print-specific layouts
-
-Determine why `drhawar.jpg` is being included in the print output and remove it completely from the print rendering process.
-
----
-
-## Expected Behavior
-
-When the user clicks **Print**:
-
-1. Generate a clean print layout.
-2. Include only the necessary text content.
-3. Automatically fit within the selected paper size.
-4. Work correctly on both:
-
-   * A5 paper
-   * A4 paper
-5. No image, logo, watermark, or background should be printed unless explicitly required.
-
----
-
-## Printing Requirements
-
-### A5 Support (Highest Priority)
-
-The clinic primarily uses physical A5 paper.
-
-Requirements:
-
-* Content must fit properly on A5.
-* No overflow.
-* No clipping.
-* No extra blank pages.
-* Proper margins.
-* Consistent alignment.
-
-### A4 Compatibility
-
-If an A4 printer is used:
-
-* Print the same text-only layout.
-* Scale gracefully.
-* Do not add images or backgrounds.
-
----
-
-## Goal
-
-The final print output should be a clean, professional, text-only medical document that prints reliably on both A5 and A4 paper sizes, with no dependency on `drhawar.jpg` or any other image assets.
+in that route add a filter that shows todays patent or yester or custom date use clean ui b, and also whe n this page rendered it should by default shows todays date 

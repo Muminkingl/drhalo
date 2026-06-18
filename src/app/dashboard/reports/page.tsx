@@ -415,7 +415,7 @@ export default function ReportsPage() {
           <div class="name-arabic-container">${patient.name}</div>
           
           <!-- Age next to العمر: -->
-          <div class="age-arabic-container">${calculateAge(patient.dob)}</div>
+          <div class="age-arabic-container">${patient.dob}</div>
 
           <!-- Today's date next to التاريخ: -->
           <div class="date-container">${new Date().toISOString().split('T')[0]}</div>
@@ -807,7 +807,7 @@ export default function ReportsPage() {
                               )}
                               {patient?.dob && (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300">
-                                  Age: {calculateAge(patient.dob)} / DOB: {patient.dob}
+                                  DOB: {patient.dob}
                                 </span>
                               )}
                               {patient?.sex && (
@@ -896,8 +896,8 @@ export default function ReportsPage() {
                   <div className="space-y-3">
                     {selectedPatient.dob && (
                       <div className="flex justify-between">
-                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Age</span>
-                        <span className="text-sm text-gray-900 dark:text-gray-100">{calculateAge(selectedPatient.dob)}</span>
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">DOB</span>
+                        <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.dob}</span>
                       </div>
                     )}
                     {selectedPatient.sex && (

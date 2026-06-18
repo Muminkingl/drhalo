@@ -46,6 +46,59 @@ function PatientsPageContent() {
   const [patientVisits, setPatientVisits] = useState<Visit[]>([]);
   const [isLoadingVisits, setIsLoadingVisits] = useState(false);
 
+  // Date Filter Helpers and State
+  const getTodayString = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const getYesterdayString = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yyyy = yesterday.getFullYear();
+    const mm = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const dd = String(yesterday.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const getPatientDateString = (p: Patient) => {
+    if (!p.createdAt) return '';
+    const date = new Date(p.createdAt);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const hasVisitOnDate = (p: Patient, dateStr: string) => {
+    if (getPatientDateString(p) === dateStr) return true;
+    const visits = patientVisitsMap[p.id] || [];
+    return visits.some(v => {
+      const vDate = new Date(v.visited_at);
+      const yyyy = vDate.getFullYear();
+      const mm = String(vDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(vDate.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}` === dateStr;
+    });
+  };
+
+  const [dateFilter, setDateFilter] = useState<string>(getTodayString());
+
+  // Auto-select patient from query param
+  useEffect(() => {
+    const pId = searchParams.get('patientId');
+    if (pId && patients.length > 0) {
+      const patient = patients.find(p => p.id === pId);
+      if (patient) {
+        setSelectedPatient(patient);
+        setShowMobileDetails(true);
+      }
+    }
+  }, [searchParams, patients]);
+
   // Visit selector modals
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [showEditVisitModal, setShowEditVisitModal] = useState(false);
@@ -358,7 +411,7 @@ function PatientsPageContent() {
           <div class="name-arabic-container">${patient.name}</div>
           
           <!-- Age next to العمر: -->
-          <div class="age-arabic-container">${calculateAge(patient.dob)}</div>
+          <div class="age-arabic-container">${patient.dob}</div>
 
           <!-- Today's date next to التاريخ: -->
           <div class="date-container">${new Date().toISOString().split('T')[0]}</div>
@@ -630,7 +683,13 @@ function PatientsPageContent() {
       }
     }
 
-    return matchesSearch && matchesAge;
+    // Date filter
+    let matchesDate = true;
+    if (dateFilter) {
+      matchesDate = hasVisitOnDate(patient, dateFilter);
+    }
+
+    return matchesSearch && matchesAge && matchesDate;
   });
 
   // Handle patient selection for details view
@@ -833,6 +892,39 @@ function PatientsPageContent() {
               </div>
             </div>
 
+            {/* Date filter picker */}
+            <div className="flex items-center border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800 h-10 shadow-xs">
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="px-3 py-2 bg-transparent text-gray-900 dark:text-white text-xs focus:outline-none border-r border-gray-300 dark:border-gray-700 font-semibold"
+              />
+              <div className="flex text-[10px] font-bold text-gray-600 dark:text-gray-300 px-2 gap-1">
+                <button 
+                  type="button" 
+                  onClick={() => setDateFilter(getTodayString())} 
+                  className={`px-2 py-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition ${dateFilter === getTodayString() ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''}`}
+                >
+                  Today
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setDateFilter(getYesterdayString())} 
+                  className={`px-2 py-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition ${dateFilter === getYesterdayString() ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''}`}
+                >
+                  Yesterday
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setDateFilter('')} 
+                  className={`px-2 py-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition ${dateFilter === '' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''}`}
+                >
+                  All
+                </button>
+              </div>
+            </div>
+
             <div className="relative">
               <button
                 onClick={() => setIsFilterOpen(!isFilterOpen)}
@@ -992,7 +1084,7 @@ function PatientsPageContent() {
                             </span>
                           )}
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Age: {calculateAge(patient.dob)} | {patient.diagnosis}
+                            DOB: {patient.dob} | {patient.diagnosis}
                           </p>
                         </div>
                         <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
@@ -1126,6 +1218,16 @@ function PatientsPageContent() {
                     </div>
                     <div className="flex space-x-2">
                       <button
+                        onClick={() => setIsEditing(true)}
+                        className="p-2 text-indigo-600 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 rounded-md transition duration-150 border border-indigo-100 dark:border-indigo-900/40"
+                        title="Edit Patient Information"
+                      >
+                        <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+
+                      <button
                         onClick={() => setShowPdfModal(true)}
                         className="p-2 text-green-600 hover:bg-green-100 rounded-md transition duration-150"
                         title="Generate PDF Report"
@@ -1157,30 +1259,40 @@ function PatientsPageContent() {
                   </div>
 
                   <div className="grid grid-cols-1 gap-6 mb-6">
-                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Personal Information</h3>
+                    <div className="bg-gray-50 dark:bg-gray-900/40 p-4.5 rounded-xl border border-gray-100 dark:border-gray-700">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3.5">Personal Information</h3>
                       <div className="space-y-3">
                         {selectedPatient.dob && (
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">DOB</span>
-                            <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.dob}</span>
+                          <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700/50">
+                            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">DOB</span>
+                            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{selectedPatient.dob}</span>
                           </div>
                         )}
                         {selectedPatient.sex && (
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Sex</span>
-                            <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.sex}</span>
+                          <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700/50">
+                            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">Gender</span>
+                            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{selectedPatient.sex}</span>
                           </div>
                         )}
                         {selectedPatient.mobileNumber && (
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Mobile</span>
-                            <span className="text-sm text-gray-900 dark:text-gray-100">{selectedPatient.mobileNumber}</span>
+                          <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700/50">
+                            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">Phone Number</span>
+                            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{selectedPatient.mobileNumber}</span>
                           </div>
                         )}
-                        <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-                          <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">Clinic ID</span>
-                          <span className="text-sm font-bold text-gray-900 dark:text-white bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded">{selectedPatient.clinicId}</span>
+                        <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700/50">
+                          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">Registration Date</span>
+                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatDate(selectedPatient.createdAt)}</span>
+                        </div>
+                        {selectedPatient.note && (
+                          <div className="flex flex-col py-2 border-b border-gray-100 dark:border-gray-700/50">
+                            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5">General Notes</span>
+                            <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-100 dark:border-gray-700 leading-relaxed">{selectedPatient.note}</p>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Clinic ID</span>
+                          <span className="text-sm font-bold text-gray-900 dark:text-white bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">{selectedPatient.clinicId}</span>
                         </div>
                       </div>
                     </div>

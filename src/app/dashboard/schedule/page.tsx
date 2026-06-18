@@ -34,6 +34,8 @@ export default function AppointmentsSchedulePage() {
   const [formData, setFormData] = useState({
     patientName: '',
     phoneNumber: '',
+    gender: '' as 'Male' | 'Female' | '',
+    age: '',
     appointmentDate: getTodayString(),
     appointmentTime: '10:00',
     notes: '',
@@ -80,6 +82,8 @@ export default function AppointmentsSchedulePage() {
     setFormData({
       patientName: '',
       phoneNumber: '',
+      gender: '',
+      age: '',
       appointmentDate: dateFilter || getTodayString(),
       appointmentTime: '10:00',
       notes: '',
@@ -95,6 +99,8 @@ export default function AppointmentsSchedulePage() {
     setFormData({
       patientName: app.patientName,
       phoneNumber: app.phoneNumber,
+      gender: (app.gender || '') as 'Male' | 'Female' | '',
+      age: app.age || '',
       appointmentDate: app.appointmentDate,
       appointmentTime: app.appointmentTime,
       notes: app.notes,
@@ -107,8 +113,8 @@ export default function AppointmentsSchedulePage() {
   // Form Submission for Adding
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.patientName.trim() || !formData.phoneNumber.trim()) {
-      setFormError('Patient name and phone number are required.');
+    if (!formData.patientName.trim() || !formData.phoneNumber.trim() || !formData.gender) {
+      setFormError('Patient name, phone number, and gender are required.');
       return;
     }
 
@@ -128,8 +134,8 @@ export default function AppointmentsSchedulePage() {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAppointment) return;
-    if (!formData.patientName.trim() || !formData.phoneNumber.trim()) {
-      setFormError('Patient name and phone number are required.');
+    if (!formData.patientName.trim() || !formData.phoneNumber.trim() || !formData.gender) {
+      setFormError('Patient name, phone number, and gender are required.');
       return;
     }
 
@@ -171,16 +177,25 @@ export default function AppointmentsSchedulePage() {
     }
   };
 
-  // Redirect to registration form with pre-filled details
-  const handleRegisterPatient = (app: Appointment) => {
-    // If not Arrived yet, automatically mark Arrived first (Staff registration convenience)
-    if (app.status !== 'Arrived' && app.status !== 'Completed') {
-      handleUpdateStatus(app, 'Arrived');
+  // Redirect to patient details or trigger registration
+  const handleRegisterPatient = async (app: Appointment) => {
+    if (app.converted && app.convertedPatientId) {
+      router.push(`/dashboard/patients?patientId=${app.convertedPatientId}`);
+      return;
     }
-    
-    // Redirect with query parameters
-    const url = `/dashboard/patient-form?appointmentId=${app.id}&name=${encodeURIComponent(app.patientName)}&phone=${encodeURIComponent(app.phoneNumber)}`;
-    router.push(url);
+  
+    try {
+      // If not Arrived yet, automatically mark Arrived first (triggers auto-creation)
+      const patientId = await editAppointment(app.id, { status: 'Arrived' });
+      if (patientId) {
+        router.push(`/dashboard/patients?patientId=${patientId}`);
+      } else {
+        router.push(`/dashboard/patients`);
+      }
+    } catch (err) {
+      console.error('Failed to register patient:', err);
+      alert('Failed to automatically create patient record.');
+    }
   };
 
   // Quick date filter buttons helpers
@@ -384,7 +399,16 @@ export default function AppointmentsSchedulePage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-xs font-medium space-x-1.5">
                       {/* Workflow Actions */}
-                      {app.status === 'Scheduled' && (
+                      {app.converted && app.convertedPatientId && (
+                        <button
+                          onClick={() => handleRegisterPatient(app)}
+                          className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-sm animate-pulse"
+                        >
+                          View Patient
+                        </button>
+                      )}
+
+                      {!app.converted && app.status === 'Scheduled' && (
                         <>
                           <button
                             onClick={() => handleUpdateStatus(app, 'Arrived')}
@@ -402,20 +426,12 @@ export default function AppointmentsSchedulePage() {
                       )}
 
                       {app.status === 'Arrived' && (
-                        <>
-                          <button
-                            onClick={() => handleRegisterPatient(app)}
-                            className="px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors shadow-sm"
-                          >
-                            Register Patient
-                          </button>
-                          <button
-                            onClick={() => handleUpdateStatus(app, 'Completed')}
-                            className="px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-300 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
-                          >
-                            Mark Complete
-                          </button>
-                        </>
+                        <button
+                          onClick={() => handleUpdateStatus(app, 'Completed')}
+                          className="px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-300 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
+                        >
+                          Mark Complete
+                        </button>
                       )}
 
                       {/* General Actions dropdown or small icon buttons */}
@@ -494,6 +510,32 @@ export default function AppointmentsSchedulePage() {
                   className="w-full px-4.5 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   placeholder="Enter phone number"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Gender *</label>
+                  <select
+                    required
+                    value={formData.gender}
+                    onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value as any }))}
+                    className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold"
+                  >
+                    <option value="">Select gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Age (optional)</label>
+                  <input
+                    type="text"
+                    value={formData.age}
+                    onChange={(e) => setFormData(prev => ({ ...prev, age: e.target.value }))}
+                    className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    placeholder="Age or DOB"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -594,6 +636,32 @@ export default function AppointmentsSchedulePage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
                   className="w-full px-4.5 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Gender *</label>
+                  <select
+                    required
+                    value={formData.gender}
+                    onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value as any }))}
+                    className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold"
+                  >
+                    <option value="">Select gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Age (optional)</label>
+                  <input
+                    type="text"
+                    value={formData.age}
+                    onChange={(e) => setFormData(prev => ({ ...prev, age: e.target.value }))}
+                    className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    placeholder="Age or DOB"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

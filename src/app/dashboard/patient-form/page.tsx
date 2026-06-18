@@ -174,16 +174,23 @@ function PatientFormContent() {
     try {
       setFormSubmitted(true);
       
+      let patientId = '';
       if (mode === 'existing' && selectedPatient) {
+        patientId = selectedPatient.id;
         await addVisit(selectedPatient.id, { ...formData, clinicId: '' });
       } else {
         // Since clinicId is auto-generated on the server, we don't include it in the form data
-        await addPatient({ ...formData, clinicId: '' });
+        const newPatient = await addPatient({ ...formData, clinicId: '' });
+        patientId = newPatient.id;
       }
 
-      // If we have a prefilled appointment, update its status to Completed
+      // If we have a prefilled appointment, update its status to Completed and link the patient record
       if (prefilledAppointmentId && editAppointment) {
-        await editAppointment(prefilledAppointmentId, { status: 'Completed' });
+        await editAppointment(prefilledAppointmentId, { 
+          status: 'Completed',
+          converted: true,
+          convertedPatientId: patientId
+        });
       }
 
       // Reset form after submission

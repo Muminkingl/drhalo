@@ -172,20 +172,7 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
       return;
     }
 
-    // Calculate age for display
-    let ageDisplay = 'N/A';
-    if (patient.dob) {
-      const birthDate = new Date(patient.dob);
-      if (!isNaN(birthDate.getTime())) {
-        const today = new Date();
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const monthDiff = today.getMonth() - birthDate.getMonth();
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-          age--;
-        }
-        ageDisplay = age.toString();
-      }
-    }
+
 
     // Create content for the print window
     printWindow.document.write(`
@@ -406,7 +393,7 @@ export default function PatientEditForm({ patient, onSubmit, onCancel, isLoading
           <div class="name-arabic-container">${patient.name}</div>
           
           <!-- Age next to العمر: -->
-          <div class="age-arabic-container">${ageDisplay}</div>
+          <div class="age-arabic-container">${patient.dob || 'N/A'}</div>
 
           <!-- Today's date next to التاريخ: -->
           <div class="date-container">${new Date().toISOString().split('T')[0]}</div>
